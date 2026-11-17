@@ -23,7 +23,9 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - Drag an output port on the right of a node to an input port on the left.
   Every destination sums its incoming connections. Fan out to multiple effects
   for parallel branches and reconnect their outputs to combine them.
-- Purple ports/cables are compressor sidechains. Existing delayed feedback
+- Input and output squares follow their card's color, including custom colors
+  and bypass dimming. The lower input is the sidechain; its cable is purple.
+  Existing delayed feedback
   edges are amber. The Matrix's cycle validation and feedback policy apply.
 - Click a cable to select it. **Plain wheel always zooms the outer canvas**,
   inside the graph; over an inspector parameter it edits that parameter. It never changes a cable gain. **Shift+wheel**
@@ -34,7 +36,7 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
 - To change existing connections, select cables and **Ctrl+Shift-click the new
   destination**. Their source endpoints, individual gains, and colors are kept;
   the cards' other sends and the old destination's downstream chain stay intact.
-  The entire reroute is one undo step. Click the lower purple input to move to a
+  The entire reroute is one undo step. Click the lower input to move to a
   compressor sidechain; clicking the card body uses its main input. With cables
   selected, this gesture moves those cables even in a mixed card/cable selection.
   With only source cards selected, it adds connections as before.
@@ -63,6 +65,42 @@ Inherited track-to-tile routing remains inspectable in the Matrix.
   ports are available to patch. Closed output ports say N/A.
 - Undo/Redo and Ctrl+Z/Ctrl+Y are shared with the Matrix. Audition keys pass through
   to the instrument. MOSAIC / CLOSE returns to Mosaic without stopping audio.
+- **F10** opens TrackSister and returns to the workspace that opened it on the
+  next press, including FX Canvas. **Ctrl+S** keeps FX Canvas open: the existing
+  save browser, overwrite confirmation and progress appear over the graph.
+
+## Consolidate and arrange
+
+| Shortcut | Selected cards or selected group rug |
+| --- | --- |
+| **Ctrl+Shift+P** | Consolidate a serial chain into one Pedalboard, including native and SunVox effects. |
+| **Ctrl+Alt+P** | Consolidate up to eight native effects into one Meta FX card. |
+| **Ctrl+R** | Arrange on a regular grid by name, using natural alphanumeric order (2 before 10). |
+| **Ctrl+Shift+R** | Arrange by card/effect type, then by name. |
+
+Consolidation follows cable order, regardless of selection order or placement.
+All outside inputs must enter the first effect, and all outside outputs must
+leave the last effect. Internal cables must have unity gain and neutral pan and
+width. Multiple sources entering the first effect and multiple outputs leaving
+the last are supported. Inputs and output gains, effect settings, bypass states,
+and boundary cable colors are retained. Double-click the new card to edit it;
+Ctrl+Z restores the original cards and connections. As with replacing an effect,
+the new container constructs fresh DSP history; existing reverb/delay tails are
+not transferred into its children.
+
+A failed consolidation displays a notification explaining the reason and leaves
+the patch unchanged. Separate inputs, parallel branches, intermediate sends,
+feedback, sidechains, external modulation mappings, compressors, and nested racks
+cannot be represented by these serial containers. Meta FX also cannot retain
+SunVox effects, captured transient/filter states or filter locks; use a Pedalboard
+for those native states or SunVox chains. Pedalboard storage holds up to 20 stages.
+Pedalboard stages share a bypass fade time; Meta FX stages use 12 ms fades.
+Selections with incompatible fade times or filter MIDI mappings are rejected
+with an explanation as well.
+
+Arrangement keeps card sizes and routing, anchors at the selection's top left,
+and leaves enough space for the largest selected card. Unselected objects stay
+where they are. Each arrangement is one undo step and saves with the project.
 
 ## Modulation curves
 

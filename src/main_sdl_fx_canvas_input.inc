@@ -1,6 +1,9 @@
 /* Canvas gestures use their own drag range; parameter editors already use 10..40. */
 static int fx_canvas_key(SDL_Keycode key)
 {return key==SDLK_t || key==SDLK_F2 || key==SDLK_ESCAPE || key==SDLK_BACKQUOTE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
+static int fx_arrange_or_consolidate_key(SDL_Keycode key,int mod)
+{return (mod&KMOD_CTRL) && !(mod&KMOD_GUI) && ((key==SDLK_r && !(mod&KMOD_ALT)) ||
+    (key==SDLK_p && (!!(mod&KMOD_SHIFT)!=!!(mod&KMOD_ALT))));}
 static void fx_bypass_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     MatrixWindow *w=&matrix_window;int any=0,count=0;
@@ -35,7 +38,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     }
     if(fx_label_drag_event(e,x,y))return 1;
     if(!fx_label_visible(fx_canvas.label_selected))fx_canvas.label_selected=-1;
-    if(e->type==SDL_KEYUP){if(fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
+    if(e->type==SDL_KEYUP){if(fx_canvas_key(e->key.keysym.sym) || fx_arrange_or_consolidate_key(e->key.keysym.sym,e->key.keysym.mod) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
         e->key.windowID=SDL_GetWindowID(main);return 0;}
     if(fx_canvas.movement_popup) {
         if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE)fx_canvas.movement_popup=0;
@@ -77,6 +80,24 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;int mod=e->key.keysym.mod;
         if(e->key.repeat && (fx_canvas_key(key) || (mod&KMOD_CTRL)))return 1;
+        if(key==SDLK_s && (mod&KMOD_CTRL) && !(mod&(KMOD_ALT|KMOD_GUI))) {
+            if(!ui_blocking_dialog_open_except_workspaces(ui)) {
+                begin_active_project_save(ui);
+                if(ui->project_overwrite_confirm_open || ui->browser.mode==TS_BROWSER_SAVE_RECIPE)ui->project_save_window_id=w->id;
+            }
+            return 1;
+        }
+        if(key==SDLK_F10)return 0; /* Keep the real origin for TrackSister's return path. */
+        if(key==SDLK_r && (mod&KMOD_CTRL) && !(mod&(KMOD_ALT|KMOD_GUI))) {
+            if(!fx_canvas.meta)fx_arrange((mod&KMOD_SHIFT)!=0,pages,bank);
+            else snprintf(w->status,sizeof(w->status),"RETURN TO THE OUTER FX CANVAS TO ARRANGE CARDS.");
+            return 1;
+        }
+        if(key==SDLK_p && (mod&KMOD_CTRL) && !(mod&KMOD_GUI) && (!!(mod&KMOD_SHIFT)!=!!(mod&KMOD_ALT))) {
+            if(!fx_canvas.meta)fx_consolidate((mod&KMOD_ALT)!=0,device,audio,ui,pages,bank);
+            else fx_consolidate_notice("Return to the outer FX Canvas and select a serial chain to consolidate.");
+            return 1;
+        }
         if(key==SDLK_BACKQUOTE && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))) {
             fx_return_mosaic(main,ui);return 1;
         }

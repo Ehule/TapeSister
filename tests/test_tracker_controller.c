@@ -594,7 +594,8 @@ int main(int argc,char **argv)
     for(size_t i=0;i<instrument->current.frames;++i)instrument->current.data[i]=.2f;
     instrument->has_loop=1;instrument->loop_first=0;instrument->loop_last=48000;
     assert(ts_instrument_sync_selected(instrument,error,sizeof(error)));
-    key(SDLK_F10);assert(ui->tracker_open && pages->tracker.pattern_count==1 && !a->tracker.running);
+    ui->mosaic_open=1;
+    key(SDLK_F10);assert(ui->tracker_open && !ui->mosaic_open && pages->tracker.pattern_count==1 && !a->tracker.running);
     TsTrackerPattern *p=ts_sister_tracker_pattern(&pages->tracker,pages->tracker.editor_pattern);
     click(20,342);assert(p->cells[0][0].tile_id==instrument->bank[0].tile_id);
     key(SDLK_z);assert(p->cells[0][0].note==ui->keyboard_base_note && p->cells[0][0].note_kind==TS_TRACKER_NOTE_PITCH);
@@ -619,7 +620,8 @@ int main(int argc,char **argv)
     /* Space must act on transport state even when UI telemetry is stale. */
     atomic_store(&a->tracker.display_running,2);key(SDLK_SPACE);assert(a->tracker.paused);
     atomic_store(&a->tracker.display_running,0);key(SDLK_SPACE);assert(!a->tracker.paused);
-    key(SDLK_F10);assert(!ui->tracker_open && a->tracker.running);
+    key(SDLK_F10);assert(!ui->tracker_open && ui->mosaic_open && a->tracker.running);
+    ui->mosaic_open=0; /* Remaining fixtures explicitly exercise the sample workspace. */
     /* Stop belongs to tracker; an existing held manual note keeps its phase. */
     TsNoteEvent n;TsTuning tuning={60,0};assert(ts_note_event_qwerty(&n,0,60));
     assert(ts_note_bank_start_sample_event(&a->notes,&instrument->current,&tuning,&n,1,48000)==TS_NOTE_STARTED);

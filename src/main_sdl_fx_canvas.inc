@@ -573,6 +573,8 @@ static void fx_groups_clamp(void);
 #include "main_sdl_fx_canvas_labels.inc"
 #include "main_sdl_fx_canvas_patch.inc"
 #include "main_sdl_fx_canvas_style.inc"
+#include "main_sdl_fx_canvas_arrange.inc"
+#include "main_sdl_fx_canvas_consolidate.inc"
 #include "main_sdl_fx_canvas_reroute.inc"
 #include "main_sdl_fx_canvas_groups.inc"
 #include "main_sdl_fx_canvas_properties.inc"
@@ -675,10 +677,10 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
                 color=mixed;detail="PLAYING";
             }
             fx_node_rect(x,y,width,height,title,compact,detail,color,fx_chosen(n->row),n->scale);
-            if(n->destination>=0 && (!c || c->type!=TS_MATRIX_FX_MODULATOR))fx_rect(x-4,y+height/2-4,9,9,FX_CABLE);
-            if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,FX_CABLE);
+            if(n->destination>=0 && (!c || c->type!=TS_MATRIX_FX_MODULATOR))fx_rect(x-4,y+height/2-4,9,9,color);
+            if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,color);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
-            if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_rect(x-4,y+(int)(height*.8f)-4,9,9,0xffbc98ccu);
+            if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_rect(x-4,y+(int)(height*.8f)-4,9,9,color);
             float peak=(n->row.kind==2 || n->row.kind==4)?w->peaks[n->row.index]:0;
             if(peak>0 && x>20 && x+width<fx_right() && y+height<FX_BOTTOM && y>=FX_TOP)mx_signal(x+8,y+height-8,width-16,3,peak,MX_GREEN);
         }
@@ -697,8 +699,8 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         for(int y=374;y<418;y+=8)mx_rect(fx_split()+3,y,4,4,grip);
         if(fx_canvas.help) {
             mx_text(24,FX_BOTTOM+16,"G: grab / S: resize / Ctrl+Shift-click: connect sources / move cables",FX_TEXT,2);
-            mx_text(24,FX_BOTTOM+44,"Wheel: zoom / Shift+wheel: cable gain / Z: frame selection / Home: fit",FX_TEXT,2);
-            mx_text(24,FX_BOTTOM+72,"Double-click empty: add / F2: name + color / X: delete / Ctrl+C/V: copy",FX_TEXT,2);
+            mx_text(24,FX_BOTTOM+44,"Ctrl+R: arrange names / Ctrl+Shift+R: types / Ctrl+Shift+P: Pedalboard",FX_TEXT,2);
+            mx_text(24,FX_BOTTOM+72,"Ctrl+Alt+P: Meta FX / F2: name + color / Shift+wheel: gain / Z: frame",FX_TEXT,2);
         }
     }
     mx_text(20,22,"FX CANVAS",FX_CABLE,3);

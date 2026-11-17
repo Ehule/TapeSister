@@ -35,7 +35,7 @@ static FxCanvasNode *instance(uint32_t id)
 static SDL_Surface *rendered_frame(void)
 {
     MatrixWindow *w=&matrix_window;w->palette=ui.palette;
-    mx_draw_frame(&audio,&pages,&bank);
+    mx_draw_frame(&audio,&pages,&bank,&ui);
     int width,height;assert(SDL_GetRendererOutputSize(w->renderer,&width,&height)==0);
     SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);
     assert(surface && SDL_RenderReadPixels(w->renderer,NULL,surface->format->format,surface->pixels,surface->pitch)==0);
@@ -490,6 +490,7 @@ static void sunvox_browser(const char *dir)
 
  #include "test_fx_canvas_patch.inc"
 #include "test_fx_canvas_groups.inc"
+#include "test_fx_canvas_consolidate.inc"
 
 int main(int argc,char **argv)
 {
@@ -579,6 +580,7 @@ int main(int argc,char **argv)
     SDL_SetWindowSize(matrix_window.window,1001,701);fx_paint(&audio,&pages,&bank);
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     gallery_view();text_labels();grouped_text_selection();patch_workflow();patch_twenty_cards();control_and_bus_wires();movement_heading_objects();rug_groups();
+    consolidate_and_arrange();save_in_fx_canvas();
     key(SDLK_BACKQUOTE,KMOD_NONE);assert(!matrix_window.visible && ui.mosaic_open && !ui.tracker_open);
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;

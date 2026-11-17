@@ -574,6 +574,8 @@ typedef struct {
     TsSisterTracker *tracker;
     TsTrackerEdit *tracker_edit;
     int tracker_open, tracker_field, tracker_scroll, tracker_hex_digit, tracker_hex_value;
+    int tracker_return_mosaic;
+    uint32_t tracker_return_window_id;
     const uint32_t *tracker_embedded_frame; /* 632x400 host-owned embedded workspace. */
     int tracker_repeat_control, tracker_repeat_delta, tracker_repeat_button, tracker_follow_hold;
     uint32_t tracker_repeat_next, tracker_cursor_epoch;
@@ -687,6 +689,7 @@ typedef struct {
     double mosaic_time, mosaic_scroll, mosaic_xscroll, mosaic_scale, mosaic_hscale;
     uint64_t mosaic_loaded_view_epoch; /* Preserve restored selection through controller reset. */
     int project_save_new_bundle; /* The active legacy TSR is retained during migration. */
+    uint32_t project_save_window_id; /* Save overlay owner; never serialized. */
     uint64_t mosaic_card_mix_event;
     uint64_t mosaic_hover_event; /* Screen-space pick; never changes the selection. */
     int mosaic_card_mix_part; /* Hover/drag: 1 fade-in, 2 fade-out, 3 pan. */
@@ -1015,6 +1018,7 @@ double ts_ui_mosaic_volume_time(const TsUiState *ui, double y);
 void ts_ui_render_gallery(TsFramebuffer *fb,const TsUiState *ui);
 void ts_ui_render_mosaic_choice(TsFramebuffer *fb, const TsUiState *ui);
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument);
+void ts_ui_render_project_save_overlay(TsFramebuffer *fb,const TsUiState *ui);
 void ts_ui_cpu_label(char *text, size_t size, double percent);
 int ts_ui_cpu_contains(const TsUiState *ui, int x, int y);
 int ts_ui_foreground_panel_open(const TsUiState *ui);

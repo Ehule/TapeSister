@@ -7546,7 +7546,8 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
        ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_LOAD_VISUAL_FOLDER && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
        ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO_POOL && ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
        !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
-    if(ui_dialog_open(ui))ui->tracker_open=0;
+    if(ui_dialog_open(ui) && !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
+       !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->tracker_open=0;
 }
 
 static int sister_performance_keys_allowed(const TsUiState *ui)
@@ -12397,6 +12398,7 @@ static const char *ts_native_channel_name(int capture,unsigned channel);
 static int ts_native_is_jack(void);
 static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_matrix.inc"
+#include "main_sdl_project_save_overlay.inc"
 #include "main_sdl_character_filter.inc"
 #include "main_sdl_meta_fx.inc"
 #include "main_sdl_modulation.inc"
@@ -14219,6 +14221,7 @@ static int keyboard_sustain_event(const SDL_Event *event,SDL_Window *window,
 }
 
 #include "main_sdl_keyboard_sequence.inc"
+#include "main_sdl_tracker_workspace.inc"
 #define tracker_event tracker_native_event
 #define tracker_refresh tracker_native_refresh
 #include "main_sdl_tracker.inc"
@@ -14946,6 +14949,7 @@ int main(int argc, char **argv)
                                        &sample_pages,
                                        parked_instrument, record_bank_active,
                                        &pending_file,&mosaic);
+        project_save_overlay_poll(&ui);
         if (ui.exit_after_save == 2) {
             if (ui.exit_for_new) ui.new_project_pending = 1;
             else { exit_confirmed = 1; running = 0; continue; }
@@ -15031,6 +15035,8 @@ int main(int argc, char **argv)
                 main_paint_invalid = 1;
             wheel_event_coalesce(&event);
             if (!wheel_event_prepare(&event)) continue;
+            project_save_overlay_poll(&ui);
+            project_save_overlay_event(&event,window,&ui);
             uint32_t event_id = event_window_id(&event);
             if(application_fullscreen_event(&event,window,&sister_window,&ui)) {
                 frame_snapshot_valid=0;continue;

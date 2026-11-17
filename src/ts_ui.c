@@ -3275,6 +3275,16 @@ static void project_saving_render(TsFramebuffer *fb,const TsUiState *ui)
 
 }
 
+void ts_ui_render_project_save_overlay(TsFramebuffer *fb,const TsUiState *ui)
+{
+    render_palette=&ui->palette;render_group=TS_THEME_CANVAS;
+    memset(fb->pixels,0,sizeof(fb->pixels));
+    if(ui->browser.mode==TS_BROWSER_SAVE_RECIPE)
+        browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
+    if(ui->project_overwrite_confirm_open)project_overwrite_render(fb,ui);
+    if(ui->file_busy)project_saving_render(fb,ui);
+}
+
 void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *instrument)
 {
     render_palette = &ui->palette;
@@ -3289,6 +3299,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         } else tracker_render(fb,ui,instrument);
         if(ui->browser.mode!=TS_BROWSER_CLOSED)
             browser_render(fb,&ui->browser,ui->text_cursor_visible,ui->file_busy,0);
+        if(ui->project_overwrite_confirm_open)project_overwrite_render(fb,ui);
         master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb,ui);return;
     }
     if(ui->mosaic_open && ui->mosaic) {

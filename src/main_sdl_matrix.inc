@@ -922,12 +922,19 @@ static void mx_prepare_surface(MatrixWindow *w)
     SDL_DestroyTexture(w->texture);free(w->pixels);
     w->texture=texture;w->pixels=pixels;w->pixel_w=width;w->pixel_h=height;w->dirty=1;
 }
-static void mx_draw_frame(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
+static void mx_draw_frame(AudioState *audio,TsSamplePages *pages,TsInstrument *bank,const TsUiState *ui)
 {
     MatrixWindow *w=&matrix_window;
     mx_prepare_surface(w);
     if(sunvox_editor.node || sunvox_editor.child)svfx_paint();
     else if(w->canvas)fx_paint(audio,pages,bank);else mx_paint(audio,pages,bank);
+    if(ui->project_save_window_id==w->id) {
+        static TsFramebuffer overlay;ts_ui_render_project_save_overlay(&overlay,ui);
+        for(int y=0;y<w->pixel_h;++y)for(int x=0;x<w->pixel_w;++x) {
+            uint32_t color=overlay.pixels[(size_t)(y*TS_UI_HEIGHT/w->pixel_h)*TS_UI_WIDTH+x*TS_UI_WIDTH/w->pixel_w];
+            if(color>>24)w->pixels[(size_t)y*w->pixel_w+x]=color;
+        }
+    }
     SDL_UpdateTexture(w->texture,NULL,w->pixels,w->pixel_w*4);
     SDL_RenderClear(w->renderer);
     SDL_RenderCopy(w->renderer,w->texture,NULL,NULL);
@@ -972,8 +979,8 @@ static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *
     mx_capture_activity(device,audio,pages,bank,elapsed);w->polled=SDL_GetTicks();
     if(w->canvas)fx_build(pages,bank);
     mx_prepare_surface(w);
-    if(!mx_paint_changed(pages,bank))return;
-    mx_draw_frame(audio,pages,bank);
+    if(!mx_paint_changed(pages,bank) && ui->project_save_window_id!=w->id)return;
+    mx_draw_frame(audio,pages,bank,ui);
     SDL_RenderPresent(w->renderer);++mx_present_count;w->presented=SDL_GetTicks();w->dirty=0;
 }
 static void mx_name(int port)
@@ -1045,7 +1052,7 @@ static int matrix_event_inner(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID de
     if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE){
         if(w->effect_menu || w->effect_open){w->effect_menu=0;w->effect_open=0;w->drag=0;w->dirty=1;}else matrix_hide();return 1;
     }
-    if(e->type==SDL_KEYDOWN || e->type==SDL_KEYUP){e->key.windowID=SDL_GetWindowID(main);return 0;}
+    if(e->type==SDL_KEYDOWN || e->type==SDL_KEYUP){if(e->key.keysym.sym!=SDLK_F10)e->key.windowID=SDL_GetWindowID(main);return 0;}
     int x,y,rx,ry,ww,hh;SDL_GetWindowSize(w->window,&ww,&hh);
     if(e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEBUTTONUP){rx=e->button.x;ry=e->button.y;}
     else if(e->type==SDL_MOUSEMOTION){rx=e->motion.x;ry=e->motion.y;}
@@ -1206,7 +1213,7 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     int own=w->visible && (event_window_id(e)==w->id || properties);
     if(own && !properties && e->type!=SDL_MOUSEMOTION)w->dirty=1;
     int edit=properties?(fx_canvas.properties && fx_properties_apply_event(e)):own && ((w->canvas && fx_canvas.confirm_delete && e->type==SDL_KEYDOWN) || (w->canvas && fx_canvas.label_editing && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || (w->canvas && fx_canvas.popup && e->type==SDL_KEYDOWN && (e->key.keysym.sym==SDLK_RETURN || e->key.keysym.sym==SDLK_KP_ENTER)) || ((sunvox_editor.node || sunvox_editor.child) && (e->type==SDL_DROPFILE || (e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN))) || e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL ||
-        (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
+        (w->canvas && e->type==SDL_KEYDOWN && (fx_canvas_key(e->key.keysym.sym) || fx_arrange_or_consolidate_key(e->key.keysym.sym,e->key.keysym.mod) || ((e->key.keysym.mod&KMOD_CTRL) && e->key.keysym.sym==SDLK_v))) ||
         (w->rename>=0 && e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_RETURN) ||
         (w->rename<0 && e->type==SDL_KEYDOWN && mx_layout_key(e)));
     if(edit || w->drag)++mx_activity_epoch;
