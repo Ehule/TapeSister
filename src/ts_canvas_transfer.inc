@@ -78,7 +78,7 @@ int ts_sample_pages_export_canvas_with_state(const TsMosaicCanvas *canvas,const 
                     for(int i=0;i<transfer->matrix_layout.canvas_count;++i) {
                         TsFxCanvasPosition p=transfer->matrix_layout.canvas[i];
                         if(p.kind==3){if(p.canvas && p.canvas!=canvas->id)continue;p.canvas=copy->id;}
-                        transfer->matrix_layout.canvas[count++]=p;
+                        p.group=0;transfer->matrix_layout.canvas[count++]=p;
                     }
                     transfer->matrix_layout.canvas_count=count;
                 }
@@ -260,7 +260,7 @@ int ts_sample_pages_load_canvas_routed(const char *project,int index,const TsMat
         if(p.kind==4)for(int j=0;j<TS_MATRIX_EFFECT_CAPACITY;++j)if(map[j]>=0 && p.id==source->matrix.effect[j].id){p.id=next->matrix.effect[map[j]].id;keep=1;break;}
         if(!keep)continue;
         if(next->layout.canvas_count>=TS_FX_CANVAS_POSITIONS){pages_error(error,n,"FX canvas layout is full; nothing imported");goto done;}
-        p.y+=bottom+320-top;next->layout.canvas[next->layout.canvas_count++]=p;
+        p.y+=bottom+320-top;p.group=0;next->layout.canvas[next->layout.canvas_count++]=p;
     }
     if(!ts_matrix_layout_valid(&next->layout)){pages_error(error,n,"Imported FX layout exceeds the canvas limits");goto done;}
     canvas.id=identity;*out=canvas;*routing=*next;ok=1;

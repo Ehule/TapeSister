@@ -14,6 +14,13 @@ static void mosaic_scale_status(TsUiState *ui)
 static double mosaic_scale_snap(TsUiState *ui,double delta)
 {
     int anchor=ui->mosaic_scale_anchor;
+    if(ui->mosaic->grid.enabled && ui->mosaic_ghost_count) {
+        const TsMosaicEvent *o=&ui->mosaic_ghosts[0];TsMosaicEvent preview;
+        ts_ui_mosaic_scale_event(o,&preview,delta,anchor);
+        double time=anchor==1?preview.start:preview.start+preview.duration;
+        double slope=anchor==2?.5:anchor==1?-1:1;
+        return delta+(ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,time)-time)/slope;
+    }
     double best=7/ui->mosaic_scale,result=delta;
     for(int j=0;j<ui->mosaic_ghost_count;++j) {
         const TsMosaicEvent *o=&ui->mosaic_ghosts[j];TsMosaicEvent preview;

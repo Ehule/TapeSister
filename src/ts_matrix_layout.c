@@ -6,6 +6,17 @@
 #include <string.h>
 #include <math.h>
 
+TsFxCanvasGroup *ts_matrix_layout_group(TsMatrixLayout *l,uint32_t id)
+{if(id && l)for(int i=0;i<l->group_count;++i)if(l->groups[i].id==id)return &l->groups[i];return NULL;}
+static int group_valid(const TsFxCanvasGroup *p)
+{
+    if(!p->id || (p->color>>24)!=255 || !isfinite(p->x) || !isfinite(p->y) || fabsf(p->x)>1000000 || fabsf(p->y)>1000000 ||
+       !isfinite(p->w) || !isfinite(p->h) || p->w<32 || p->h<32 || p->w>2000000 || p->h>2000000 ||
+       !isfinite(p->opacity) || p->opacity<0 || p->opacity>1 || !memchr(p->name,0,sizeof(p->name)))return 0;
+    for(const unsigned char *s=(const unsigned char*)p->name;*s;++s)if(*s<32 || *s>126)return 0;return 1;
+}
+static int group_exists(const TsMatrixLayout *l,uint32_t id)
+{if(!id)return 1;for(int i=0;i<l->group_count;++i)if(l->groups[i].id==id)return 1;return 0;}
 void ts_matrix_layout_default(TsMatrixLayout *l)
 {
     memset(l,0,sizeof(*l));
@@ -39,13 +50,15 @@ static int label_valid(const TsFxCanvasLabel *p)
 int ts_matrix_layout_valid(const TsMatrixLayout *l)
 {
     if(!l || l->row_count<0 || l->row_count>TS_MATRIX_LAYOUT_ROWS)return 0;
+    if(l->group_count<0 || l->group_count>TS_FX_GROUP_LIMIT)return 0;
+    for(int i=0;i<l->group_count;++i){if(!group_valid(&l->groups[i]))return 0;for(int j=0;j<i;++j)if(l->groups[j].id==l->groups[i].id)return 0;}
     if(l->cable_count<0 || l->cable_count>TS_FX_CABLE_STYLES)return 0;
     for(int i=0;i<l->cable_count;++i)if(!cable_valid(&l->cables[i]))return 0;
     if(l->label_count<0 || l->label_count>TS_FX_LABEL_LIMIT)return 0;
-    for(int i=0;i<l->label_count;++i)if(!label_valid(&l->labels[i]))return 0;
+    for(int i=0;i<l->label_count;++i)if(!label_valid(&l->labels[i]) || !group_exists(l,l->labels[i].group))return 0;
     if(l->heading_count<0 || l->heading_count>TS_FX_HEADING_LIMIT)return 0;
     for(int i=0;i<l->heading_count;++i) {
-        if(!label_valid(&l->headings[i].label))return 0;
+        if(!label_valid(&l->headings[i].label) || !group_exists(l,l->headings[i].label.group))return 0;
         for(int j=0;j<i;++j)if(l->headings[j].canvas==l->headings[i].canvas)return 0;
     }
     unsigned char seen[TS_MATRIX_DESTINATIONS]={0};
@@ -61,7 +74,7 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
        !isfinite(l->canvas_zoom) || l->canvas_zoom<.001f || l->canvas_zoom>2)return 0;
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
-        if(!memchr(p->name,0,sizeof(p->name)) || (p->color && (p->color>>24)!=255))return 0;
+        if(!group_exists(l,p->group) || !memchr(p->name,0,sizeof(p->name)) || (p->color && (p->color>>24)!=255))return 0;
         for(const unsigned char *t=(const unsigned char *)p->name;*t;++t)if(*t<32 || *t>126)return 0;
         if(p->kind<0 || p->kind>5 || !isfinite(p->x) || !isfinite(p->y) ||
            !isfinite(p->scale) || (p->scale!=0 && (p->scale<.25f || p->scale>4.f)) ||
@@ -91,6 +104,11 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
 int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
 {
     if(!ts_matrix_layout_valid(l))return 0;
+    for(int i=0;i<l->group_count;++i){const TsFxCanvasGroup *p=&l->groups[i];
+        if(fprintf(f,"FxCanvas.Group%d=%u,%u,%.9g,%.9g,%.9g,%.9g,%.9g,",i,p->id,p->color,p->x,p->y,p->w,p->h,p->opacity)<0)return 0;
+        for(const unsigned char *s=(const unsigned char*)p->name;*s;++s)if(fprintf(f,"%02x",*s)<0)return 0;
+        if(fputc('\n',f)==EOF)return 0;}
+
     for(int i=0;i<l->cable_count;++i) {
         const TsFxCableStyle *p=&l->cables[i];
         if(fprintf(f,"FxCanvas.Cable%d=%d,%" PRIu64 ",%" PRIu64 ",%d,%u,%u\n",i,p->kind,p->source,p->canvas,p->destination,p->target,p->color)<0)return 0;
@@ -104,12 +122,14 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
         if(fprintf(f,"FxCanvas.Label%d=%.9g,%.9g,%.9g,",i,p->x,p->y,p->scale)<0)return 0;
         for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(fprintf(f,"%02x",*s)<0)return 0;
         if(fputc('\n',f)==EOF)return 0;
+        if(p->group && fprintf(f,"FxCanvas.MemberLabel%d=%u\n",i,p->group)<0)return 0;
     }
     for(int i=0;i<l->heading_count;++i) {
         const TsFxCanvasHeading *h=&l->headings[i];const TsFxCanvasLabel *p=&h->label;
         if(fprintf(f,"FxCanvas.Heading%d=%" PRIu64 ",%.9g,%.9g,%.9g,",i,h->canvas,p->x,p->y,p->scale)<0)return 0;
         for(const unsigned char *s=(const unsigned char *)p->text;*s;++s)if(fprintf(f,"%02x",*s)<0)return 0;
         if(fputc('\n',f)==EOF)return 0;
+        if(p->group && fprintf(f,"FxCanvas.MemberHeading%d=%u\n",i,p->group)<0)return 0;
     }
     for(int i=0;i<l->canvas_count;++i) {
         const TsFxCanvasPosition *p=&l->canvas[i];
@@ -121,6 +141,7 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
             for(const unsigned char *t=(const unsigned char *)p->name;*t;++t)if(fprintf(f,"%02x",*t)<0)return 0;
             if(fputc('\n',f)==EOF)return 0;
         }
+        if(p->group && fprintf(f,"FxCanvas.MemberNode%d=%u\n",i,p->group)<0)return 0;
         if(p->canvas && fprintf(f,"FxCanvas.Scene%d=%" PRIu64 "\n",i,p->canvas)<0)return 0;
     }
     for(int i=0;i<TS_MATRIX_DESTINATIONS;++i)
@@ -141,6 +162,23 @@ static int layout_number(const char **cursor,uint64_t maximum,uint64_t *number)
 int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
 {
     uint64_t i,d,kind,id;const char *s;
+    if(!strncmp(key,"FxCanvas.Group",14)){
+        s=key+14;TsFxCanvasGroup p={0};uint64_t color;int end=0;
+        if(!layout_number(&s,TS_FX_GROUP_LIMIT-1,&i) || *s || i!=(uint64_t)l->group_count ||
+           !layout_number(&value,UINT32_MAX,&id) || !id || *value++!=',' || !layout_number(&value,UINT32_MAX,&color) || *value++!=',' ||
+           sscanf(value,"%f,%f,%f,%f,%f,%n",&p.x,&p.y,&p.w,&p.h,&p.opacity,&end)!=5 || !end)return -1;
+        p.id=(uint32_t)id;p.color=(uint32_t)color;s=value+end;size_t len=strlen(s);if(len%2 || len/2>=sizeof(p.name))return -1;
+        for(size_t j=0;j<len;j+=2){if(!isxdigit((unsigned char)s[j]) || !isxdigit((unsigned char)s[j+1]))return -1;
+            char byte[3]={s[j],s[j+1],0};unsigned v=(unsigned)strtoul(byte,NULL,16);if(v<32 || v>126)return -1;p.name[j/2]=(char)v;}
+        if(!group_valid(&p) || ts_matrix_layout_group(l,p.id))return -1;l->groups[l->group_count++]=p;return 1;
+    }
+    if(!strncmp(key,"FxCanvas.Member",15)){
+        const char *kind=key+15;int type=!strncmp(kind,"Node",4)?0:!strncmp(kind,"Label",5)?1:!strncmp(kind,"Heading",7)?2:-1;
+        if(type<0)return -1;s=kind+(type==0?4:type==1?5:7);unsigned count=type==0?l->canvas_count:type==1?l->label_count:l->heading_count;
+        if(!layout_number(&s,UINT32_MAX,&i) || *s || i>=count || !layout_number(&value,UINT32_MAX,&id) || *value || !id || !group_exists(l,(uint32_t)id))return -1;
+        uint32_t *group=type==0?&l->canvas[i].group:type==1?&l->labels[i].group:&l->headings[i].label.group;
+        if(*group)return -1;*group=(uint32_t)id;return 1;
+    }
     if(!strncmp(key,"FxCanvas.Cable",14)) {
         s=key+14;uint64_t v[6];
         if(!layout_number(&s,TS_FX_CABLE_STYLES-1,&i) || *s || i!=(uint64_t)l->cable_count)return -1;

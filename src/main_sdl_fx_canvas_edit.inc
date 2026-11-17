@@ -73,7 +73,7 @@ static void fx_cancel_gesture(void)
     MatrixWindow *w=&matrix_window;
     if(w->drag==FX_DRAG_DIVIDER && w->layout)w->layout->canvas_split=fx_canvas.divider_start;
     fx_divider_cursor(0);
-    if((fx_modal() || w->drag==FX_DRAG_NODE || w->drag==FX_DRAG_PAN || w->drag==FX_DRAG_LABEL) && w->pending && w->layout)
+    if((fx_modal() || w->drag==FX_DRAG_NODE || w->drag==FX_DRAG_PAN || w->drag==FX_DRAG_LABEL || w->drag==FX_DRAG_GROUP) && w->pending && w->layout)
         *w->layout=w->pending->layout;
     if(w->drag==FX_DRAG_BOX || w->drag==FX_DRAG_WIRE_BOX) {
         memcpy(fx_canvas.labels,fx_canvas.before_labels,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;
@@ -142,6 +142,7 @@ static void fx_transform_motion(int x,int y)
             p->y=SDL_clamp(from->y+move_y,-100000.f,100000.f);
         }
     }
+    fx_groups_clamp();
 }
 static int fx_cable_crosses(float x,float y,float xx,float yy,SDL_Rect box)
 {
@@ -341,7 +342,7 @@ static void fx_paste(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,Ts
     }
     for(int i=0;i<fx_clipboard.count;++i) {
         TsFxCanvasPosition p=fx_clipboard.position[i];p.id=ids[i];p.x=SDL_clamp(p.x+dx,-100000.f,100000.f);p.y=SDL_clamp(p.y+dy,-100000.f,100000.f);
-        s->layout.canvas[s->layout.canvas_count++]=p;
+        p.group=0;s->layout.canvas[s->layout.canvas_count++]=p;
         mx_append_port(&s->layout,TS_MATRIX_EFFECT_BASE+slots[i]);
         if(fx_clipboard.effect[i].type==TS_MATRIX_FX_COMPRESSOR)mx_append_port(&s->layout,TS_MATRIX_EFFECT_SC_BASE+slots[i]);
     }

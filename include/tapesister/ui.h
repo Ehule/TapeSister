@@ -638,6 +638,9 @@ typedef struct {
     TsMosaicRange mosaic_loop_preview;
     char mosaic_loop_text[2][32], mosaic_loop_status[80];
     int mosaic_align_open;
+    int mosaic_grid_open;
+    TsMosaicGrid mosaic_grid_edit;
+    double mosaic_grid_quarter;
     int mosaic_video_open;uint64_t mosaic_video_id,mosaic_video_epoch;
     double mosaic_video_time,mosaic_video_x;
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;
@@ -990,6 +993,7 @@ enum {
     TS_MOSAIC_FX_X=442, TS_MOSAIC_FX_Y=28, TS_MOSAIC_FX_W=82, TS_MOSAIC_FX_H=10,
     TS_MOSAIC_TIME_X=530, TS_MOSAIC_TIME_Y=28, TS_MOSAIC_TIME_W=100, TS_MOSAIC_TIME_H=10,
     TS_MOSAIC_FOLLOW_X = 446, TS_MOSAIC_FOLLOW_W = 52,
+    TS_MOSAIC_GRID_X = 164, TS_MOSAIC_GRID_Y = 56, TS_MOSAIC_GRID_W = 36, TS_MOSAIC_GRID_H = 10,
     TS_MOSAIC_FIT_X = 504, TS_MOSAIC_FIT_W = 52,
     TS_MOSAIC_ZOOM_OUT_X = 560, TS_MOSAIC_ZOOM_IN_X = 588, TS_MOSAIC_ZOOM_W = 24
 };

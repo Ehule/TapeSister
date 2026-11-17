@@ -1,6 +1,6 @@
 /* Canvas gestures use their own drag range; parameter editors already use 10..40. */
 static int fx_canvas_key(SDL_Keycode key)
-{return key==SDLK_t || key==SDLK_F2 || key==SDLK_ESCAPE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
+{return key==SDLK_t || key==SDLK_F2 || key==SDLK_ESCAPE || key==SDLK_BACKQUOTE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
 static void fx_bypass_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     MatrixWindow *w=&matrix_window;int any=0,count=0;
@@ -17,6 +17,7 @@ static void fx_bypass_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiS
 static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int x,int y,int wheel)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
+    if(fx_group_drag(e,x,y))return 1;
     if(fx_canvas.label_editing)return fx_label_edit_event(e);
     if(fx_canvas.properties)return 1;
     if(fx_canvas.confirm_delete) {
@@ -76,6 +77,18 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;int mod=e->key.keysym.mod;
         if(e->key.repeat && (fx_canvas_key(key) || (mod&KMOD_CTRL)))return 1;
+        if(key==SDLK_BACKQUOTE && !(mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI))) {
+            fx_return_mosaic(main,ui);return 1;
+        }
+        if(key==SDLK_g && (mod&(KMOD_CTRL|KMOD_ALT))){
+            /* Own the chord even when grouping is unavailable. Forwarding it
+               to Mosaic would turn Ctrl+G into its Gallery shortcut. */
+            if(fx_canvas.meta)snprintf(w->status,sizeof(w->status),"RETURN TO FX CANVAS TO GROUP OBJECTS.");
+            else if(mx_editable()){
+                if(mod&KMOD_CTRL)fx_group_create();else fx_group_ungroup();}
+            return 1;
+        }
+        if(key==SDLK_F2 && fx_canvas.group_selected){fx_properties_begin_group(fx_canvas.group_selected);return 1;}
         if(key==SDLK_t && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && !fx_canvas.meta) {
             fx_canvas.place_x=(SDL_clamp(fx_canvas.mouse_x,20,fx_right())-20)/l->canvas_zoom-l->canvas_x;
             fx_canvas.place_y=(SDL_clamp(fx_canvas.mouse_y,FX_TOP,FX_BOTTOM)-FX_TOP)/l->canvas_zoom-l->canvas_y;
@@ -190,6 +203,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(e->type==SDL_MOUSEMOTION && w->drag>=FX_DRAG_MACRO && w->drag<FX_DRAG_MACRO+4 && mx_editable()) {
             int i=w->drag-FX_DRAG_MACRO;ts_meta_macro_set(&meta->meta,i,(x-24-i*310)/286.f);mx_commit_controls(device,audio,ui);}return 1;
     }
+    if(left && w->selection_count && fx_canvas.wire<0 && x>=fx_inspector_x() && x<fx_inspector_x()+fx_inspector_width() && y>=345 && y<373){
+        int kind=w->selection[0].kind,sources=kind==0 || kind==1 || kind==3;for(int i=1;i<w->selection_count;++i)sources&=w->selection[i].kind==kind;
+        if(sources){mx_return_bus(device,audio,ui,pages,bank,kind);return 1;}}
     if(fx_inspector_event(e,x,y,wheel,device,audio,ui))return 1;
     if(!click)return 1; /* Passive motion needs no graph rebuild or hit test. */
     fx_build(pages,bank);
@@ -197,6 +213,10 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(click && e->button.button==SDL_BUTTON_MIDDLE){w->drag=FX_DRAG_PAN;fx_canvas.origin_x=l->canvas_x;fx_canvas.origin_y=l->canvas_y;fx_canvas.pointer_x=x;fx_canvas.pointer_y=y;return 1;}
     if(wheel)return 1;
     if(!click)return 1;
+    uint32_t rug=fx_group_hit(x,y,1);
+    if(rug && !(SDL_GetModState()&(KMOD_CTRL|KMOD_SHIFT))){
+        if(e->button.button==SDL_BUTTON_RIGHT){fx_canvas.group_selected=rug;fx_properties_begin_group(rug);return 1;}
+        if(left){fx_group_begin(rug,x,y);return 1;}}
     for(int i=fx_label_limit()-1;i>=0;--i) {
         if(!fx_label_visible(i))continue;
         SDL_Rect r=fx_text_object_rect(i);
@@ -253,6 +273,10 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
             float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==TS_FX_MOSAIC_BUS || d==to->destination?.5f:.8f)),0,0,x,y);
             if(distance<nearest){nearest=distance;found=i;destination=d;}}}
+    rug=fx_group_hit(x,y,0);
+    if(found<0 && rug && !(modifiers&(KMOD_CTRL|KMOD_SHIFT))){
+        if(right){fx_canvas.group_selected=rug;fx_properties_begin_group(rug);return 1;}
+        if(left){fx_group_begin(rug,x,y);return 1;}}
     if(right) {
         if(found>=0) {
             if(fx_wire_selected(fx_canvas.node[found].row,destination)<0){fx_clear_wires();fx_select_wire(fx_canvas.node[found].row,destination,0);}

@@ -84,6 +84,7 @@ static int mosaic_source_preview(TsUiState *ui,MosaicController *c,int x,int y)
     ui->mosaic_ghost_count=0;
     if(x<151 || x>=ts_ui_mosaic_canvas_right(ui) || y<66 || y>=TS_MOSAIC_CANVAS_BOTTOM)return 0;
     double start=ui->mosaic_scroll+(y-66)/ui->mosaic_scale;
+    if(ui->mosaic->grid.enabled && (SDL_GetModState()&KMOD_ALT))start=ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,start);
     double left=ui->mosaic_xscroll+(x-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1);
     int count=c->source_group?c->picked_count:1;
     if(!count || start>86400)return 0;

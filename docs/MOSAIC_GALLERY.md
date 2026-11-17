@@ -3,7 +3,8 @@
 A project can contain up to 16 named Mosaic canvases: separate paintings sharing
 one sound collection and one effects/output chain. Page changes can be manual or driven by the Gallery sequencer.
 
-Open **GALLERY** at the top of Mosaic, or press **Ctrl+G**. Click **NEW** to add an
+Open **GALLERY** at the top of Mosaic, or press **Ctrl+G** with Mosaic focused
+(Ctrl+G groups objects when FX Canvas is focused). Click **NEW** to add an
 empty canvas. Select a row, choose how it should enter, then click **ENTER** or
 press Enter. The asterisk marks the active canvas; selecting a row alone does not
 change playback. **Ctrl+Page Up / Ctrl+Page Down** turns to the previous/next canvas

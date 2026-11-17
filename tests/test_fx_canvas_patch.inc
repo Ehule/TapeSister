@@ -143,7 +143,9 @@ static void control_and_bus_wires(void)
     assert(fx_visible_gain(row,TS_FX_MOSAIC_BUS,&pages,&bank)==1000);
     fx_clear_selection();fx_clear_wires();assert(fx_select_wire(row,TS_FX_MOSAIC_BUS,0));fx_validate_wires(&pages,&bank);assert(fx_canvas.wires.count==1);
     key(SDLK_DELETE,0);assert(card->output_route.matrix_enabled);for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)assert(!card->output_route.matrix_gain[d]);
-    edit_settle();key(SDLK_z,KMOD_CTRL);edit_settle();assert(!card->output_route.matrix_enabled);fx_build(&pages,&bank);
+    fx_build(&pages,&bank);for(int n=0;n<fx_canvas.count;++n)if(mx_same(fx_canvas.node[n].row,row)){fx_select(&fx_canvas.node[n],0);break;}
+    click(fx_inspector_x()+30,356,1);assert(!card->output_route.matrix_enabled);
+    edit_settle();key(SDLK_z,KMOD_CTRL);edit_settle();assert(card->output_route.matrix_enabled);key(SDLK_z,KMOD_CTRL);edit_settle();assert(!card->output_route.matrix_enabled);fx_build(&pages,&bank);
     assert(modulation_connect(id,TS_MATRIX_EFFECT_BASE+dest,0,&audio,&ui,&pages,&bank));assert(!modulation_window.visible);
     fx_clear_selection();fx_clear_wires();fx_build(&pages,&bank);assert(fx_select_wire(instance(id)->row,TS_MATRIX_EFFECT_BASE+dest,0));
     fx_validate_wires(&pages,&bank);assert(fx_canvas.wires.count==1);fx_properties_begin_cables();assert(fx_canvas.properties);

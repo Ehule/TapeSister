@@ -101,6 +101,7 @@ static void wait_render(void);
 #include "test_mosaic_group_staging.inc"
 #include "benchmark_mosaic_edits.inc"
 #include "test_mosaic_controls.inc"
+#include "test_mosaic_grid_controller.inc"
 #include "test_mosaic_source_actions.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
@@ -440,6 +441,7 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
+    if(argc>1 && !strcmp(argv[1],"--grid-pitch")) {test_mosaic_grid_pitch(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--grab")) {test_mosaic_grab(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--browser")) {test_mosaic_browser(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--handles")) {test_mosaic_handle_groups(window);test_mosaic_scale_snap(window);goto done;}
@@ -518,6 +520,7 @@ int main(int argc,char **argv)
     test_mosaic_copy_drag(window);
     test_mosaic_external_banks(window);
     test_mosaic_variation_banks(window);
+    test_mosaic_grid_pitch(window);
     test_mosaic_live_controls(window);
     test_mosaic_fades(window);
     test_mosaic_card_pan(window);test_mosaic_group_resize(window);

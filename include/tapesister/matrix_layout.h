@@ -15,16 +15,19 @@ enum { TS_FX_CANVAS_SOURCE_POSITIONS=TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS+256,
        TS_FX_CANVAS_POSITIONS=TS_FX_CANVAS_SOURCE_POSITIONS+TS_MATRIX_ROWS+TS_MATRIX_DESTINATIONS };
 enum { TS_FX_CANVAS_SPLIT_MIN=640, TS_FX_CANVAS_SPLIT_DEFAULT=1000, TS_FX_CANVAS_SPLIT_MAX=1040 };
 /* Zero scale is the legacy/default size; saved custom sizes use .25..4. */
-typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; uint32_t color; char name[48]; } TsFxCanvasPosition;
+typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; uint32_t color; char name[48]; uint32_t group; } TsFxCanvasPosition;
 enum { TS_FX_LABEL_LIMIT=64, TS_FX_LABEL_TEXT=256 };
-typedef struct {float x,y,scale;char text[TS_FX_LABEL_TEXT];} TsFxCanvasLabel;
+typedef struct {float x,y,scale;char text[TS_FX_LABEL_TEXT];uint32_t group;} TsFxCanvasLabel;
 enum { TS_FX_HEADING_LIMIT=TS_GALLERY_LIMIT+1 };
 /* Canvas zero is OTHER SOURCES. Empty text remembers a deleted heading. */
 typedef struct {uint64_t canvas;TsFxCanvasLabel label;} TsFxCanvasHeading;
 /* Presentation-only endpoint for the inherited Mosaic bus, never an audio port. */
 enum { TS_FX_MOSAIC_BUS=TS_MATRIX_DESTINATIONS, TS_FX_DESTINATIONS, TS_FX_CABLE_STYLES=2048 };
 typedef struct {uint64_t source,canvas;int kind,destination;uint32_t target,color;} TsFxCableStyle;
+enum { TS_FX_GROUP_LIMIT=64 };
+typedef struct {uint32_t id,color;float x,y,w,h,opacity;char name[48];} TsFxCanvasGroup;
 typedef struct {
+    int group_count;TsFxCanvasGroup groups[TS_FX_GROUP_LIMIT];
     uint64_t row_id[TS_MATRIX_LAYOUT_ROWS];
     unsigned char row_kind[TS_MATRIX_LAYOUT_ROWS];
     int row_count;
@@ -39,6 +42,7 @@ typedef struct {
     int cable_count;TsFxCableStyle cables[TS_FX_CABLE_STYLES];
 } TsMatrixLayout;
 
+TsFxCanvasGroup *ts_matrix_layout_group(TsMatrixLayout *layout,uint32_t id);
 void ts_matrix_layout_default(TsMatrixLayout *layout);
 int ts_matrix_layout_valid(const TsMatrixLayout *layout);
 int ts_matrix_layout_write(FILE *file,const TsMatrixLayout *layout);

@@ -7515,7 +7515,7 @@ static const char *path_basename(const char *path)
 
 static int ui_blocking_dialog_open_except_workspaces(const TsUiState *ui)
 {
-    return ui->mosaic_video_open || (ui->mosaic_gallery_open && !ui->mosaic_gallery_detached) || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
+    return ui->mosaic_grid_open || ui->mosaic_video_open || (ui->mosaic_gallery_open && !ui->mosaic_gallery_detached) || ui->mosaic_marker_open || ui->mosaic_views_open || ui->mosaic_align_open || ui->mosaic_loop_open || ui->mosaic_scatter_open || ui->mosaic_spacing_confirm || ui->mosaic_edit_choice || ui->mosaic_pattern_choice || ui->exit_confirm_open || ui->project_overwrite_confirm_open ||
            ui->overdub_confirm_open ||
            ui->file_busy || ui->transform_open || ui->drone_open ||
            ui->import_preview_open || ui->load_selection_choice_open ||
@@ -7541,7 +7541,7 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
     /* Mosaic owns these dialogs. Hiding it strands the modal: its renderer
        and input handler both require mosaic_open, while other input is blocked. */
     if(ui_dialog_open(ui) && !ui->portal.open &&
-       !ui->mosaic_video_open && (!ui->mosaic_gallery_open || ui->mosaic_gallery_detached) && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
+       !ui->mosaic_grid_open && !ui->mosaic_video_open && (!ui->mosaic_gallery_open || ui->mosaic_gallery_detached) && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
        !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
        ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_LOAD_VISUAL_FOLDER && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
        ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO_POOL && ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
@@ -18883,6 +18883,8 @@ int main(int argc, char **argv)
         unsigned gallery_external=ts_sample_pages_external_effect_roots(&sample_pages,&instrument);
         if(device)SDL_LockAudioDevice(device);
         audio.gallery_external_roots=gallery_external;ui.mosaic_engine_stopped=audio.engine_stopped;
+        ui.mosaic_grid_quarter=audio.sister.clock_controls.source==TS_CLOCK_TRACKER_SOURCE && audio.sister.master_clock.quarter_seconds>0?
+            audio.sister.master_clock.quarter_seconds:audio.sister.clock_controls.bpm>0?60.0/audio.sister.clock_controls.bpm:.5;
         if(device)SDL_UnlockAudioDevice(device);
         gallery_sequence_follow(device,&audio,&ui,&instrument,&mosaic);
         mosaic_poll(device,&ui,&instrument,&mosaic);

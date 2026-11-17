@@ -68,7 +68,7 @@ static void project_save_snapshot_scene(TsMosaic *out,const TsMosaic *in)
     memcpy(out->views,in->views,sizeof(out->views));
     memcpy(out->volume,in->volume,sizeof(out->volume));
     out->repeat=in->repeat;out->gain=in->gain;out->speed=in->speed;
-    out->auto_space=in->auto_space;out->loop_range=in->loop_range;
+    out->auto_space=in->auto_space;out->loop_range=in->loop_range;out->grid=in->grid;
     out->live_capture=in->live_capture;out->live_envelope=in->live_envelope;
 }
 static void project_save_worker_free(ProjectSaveWorker *w)

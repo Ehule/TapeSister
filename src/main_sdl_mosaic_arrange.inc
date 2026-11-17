@@ -99,7 +99,7 @@ static int mosaic_arrange_event(const SDL_Event *event,SDL_Window *window,SDL_Au
     }
     if(ui->mosaic_scatter_open)return mosaic_scatter_event(event,window,device,ui,c,x,y,mod);
     if(key && !event->key.repeat && k==SDLK_r && (mod&KMOD_CTRL)) {mosaic_scatter_open(ui,c);return 1;}
-    if(down && event->button.button==SDL_BUTTON_LEFT && x>=118 && x<200 && y>=56 && y<66) {
+    if(down && event->button.button==SDL_BUTTON_LEFT && x>=118 && x<TS_MOSAIC_GRID_X && y>=56 && y<66) {
         if(ui->mosaic->auto_space) {if(device)SDL_LockAudioDevice(device);ts_mosaic_checkpoint(ui->mosaic);ui->mosaic->auto_space=0;if(device)SDL_UnlockAudioDevice(device);}
         else ui->mosaic_spacing_confirm=1;return 1;
     }
