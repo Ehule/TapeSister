@@ -10,7 +10,9 @@ if(NOT DEFINED PR_MANIFEST)
   set(PR_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/pr-regressions.txt")
 endif()
 file(STRINGS "${PR_MANIFEST}" pr_entries)
-set(pr_targets tapesister)
+# The release also builds this EXCLUDE_FROM_ALL tool. Compile its application
+# callbacks here so a stale caller cannot pass both baseline platform checks.
+set(pr_targets tapesister tapesister_audio_benchmark)
 set(pr_tests)
 foreach(pr_entry IN LISTS pr_entries)
   if(NOT pr_entry MATCHES "^([A-Za-z0-9_-]+)[ \t]+([A-Za-z0-9_-]+)$")
