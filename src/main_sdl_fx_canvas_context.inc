@@ -2,11 +2,12 @@
    commands reuse the same Matrix transactions as their existing shortcuts. */
 enum { FX_CONTEXT_MENU=3,FX_CONTEXT_W=438,FX_CONTEXT_ROW=28,
     FX_CONTEXT_ADD,FX_CONTEXT_INPUTS,FX_CONTEXT_OUTPUTS,FX_CONTEXT_CONSOLIDATE,
+    FX_CONTEXT_WIRE_SOURCES,FX_CONTEXT_WIRE_DESTINATIONS,FX_CONTEXT_WIRE_UPSTREAM,FX_CONTEXT_WIRE_DOWNSTREAM,
     FX_CONTEXT_GROUP,FX_CONTEXT_UNGROUP,FX_CONTEXT_NAMES,FX_CONTEXT_TYPES,
     FX_CONTEXT_PROPERTIES,FX_CONTEXT_PALETTE,FX_CONTEXT_COPY,FX_CONTEXT_PASTE,
     FX_CONTEXT_DELETE,FX_CONTEXT_FIT,FX_CONTEXT_UNDO,FX_CONTEXT_REDO };
 typedef struct { int action,enabled;const char *name,*shortcut; } FxContextItem;
-static int fx_context_items(FxContextItem items[16])
+static int fx_context_items(FxContextItem items[24])
 {
     MatrixWindow *w=&matrix_window;int objects=0,effects=0,labels=0,grouped=fx_canvas.group_selected!=0;
     for(int i=0;i<fx_canvas.count;++i) {
@@ -19,6 +20,10 @@ static int fx_context_items(FxContextItem items[16])
     ITEM(FX_CONTEXT_ADD,edit,"Add effect...","Ctrl+N");
     ITEM(FX_CONTEXT_INPUTS,fx_canvas.context_has_card,"Select input cards","");
     ITEM(FX_CONTEXT_OUTPUTS,fx_canvas.context_has_card,"Select output cards","");
+    ITEM(FX_CONTEXT_WIRE_SOURCES,fx_canvas.wires.count,"Select cable sources","");
+    ITEM(FX_CONTEXT_WIRE_DESTINATIONS,fx_canvas.wires.count,"Select cable destinations","");
+    ITEM(FX_CONTEXT_WIRE_UPSTREAM,fx_canvas.wires.count,"Trace cables upstream","");
+    ITEM(FX_CONTEXT_WIRE_DOWNSTREAM,fx_canvas.wires.count,"Trace cables downstream","");
     ITEM(FX_CONTEXT_CONSOLIDATE,edit && effects>=2,"Consolidate...","Ctrl+Shift+P");
     ITEM(FX_CONTEXT_GROUP,edit && (w->selection_count || labels),"Group selection","Ctrl+G");
     ITEM(FX_CONTEXT_UNGROUP,edit && grouped,"Ungroup","Alt+G");
@@ -40,7 +45,7 @@ static void fx_context_open(int x,int y,const MatrixRow *card)
 {
     fx_canvas.context_x=x;fx_canvas.context_y=y;fx_canvas.context_has_card=card!=NULL;
     if(card)fx_canvas.context_card=*card;
-    FxContextItem items[16];int count=fx_context_items(items);
+    FxContextItem items[24];int count=fx_context_items(items);
     fx_canvas.popup=FX_CONTEXT_MENU;fx_canvas.popup_selected=-1;
     fx_canvas.popup_x=SDL_clamp(x,24,MATRIX_W-FX_CONTEXT_W-24);
     fx_canvas.popup_y=SDL_clamp(y,FX_TOP+4,FX_BOTTOM-40-count*FX_CONTEXT_ROW);
@@ -49,7 +54,7 @@ static void fx_context_open(int x,int y,const MatrixRow *card)
 }
 static void fx_context_paint(void)
 {
-    FxContextItem items[16];int count=fx_context_items(items),x=fx_canvas.popup_x,y=fx_canvas.popup_y;
+    FxContextItem items[24];int count=fx_context_items(items),x=fx_canvas.popup_x,y=fx_canvas.popup_y;
     mx_rect(x,y,FX_CONTEXT_W,40+count*FX_CONTEXT_ROW,FX_CABLE);
     mx_rect(x+2,y+2,FX_CONTEXT_W-4,36+count*FX_CONTEXT_ROW,FX_PANEL);
     fx_panel_text(x+12,y+9,FX_CONTEXT_W-100,24,"CANVAS ACTIONS",FX_FOCUS,2,1);
@@ -114,12 +119,80 @@ static void fx_context_trace(int outputs,TsSamplePages *pages,TsInstrument *bank
     free(links);free(seen);
     snprintf(w->status,sizeof(w->status),"SELECTED %d %s CARDS / ALL MOVEMENTS / Z: FRAME SELECTION",w->selection_count,outputs?"OUTPUT":"INPUT");
 }
+static void fx_context_trace_wires(int outputs,int recursive,TsSamplePages *pages,TsInstrument *bank)
+{
+    MatrixWindow *w=&matrix_window;int wire_count=fx_canvas.wires.count;
+    FxCanvasWire *wires=malloc((size_t)wire_count*sizeof(*wires));
+    if(!wires)return;
+    memcpy(wires,fx_canvas.wires.items,(size_t)wire_count*sizeof(*wires));
+    fx_canvas.movement=0;fx_canvas.active_view=0;fx_build(pages,bank);
+    enum { WORDS=(TS_FX_DESTINATIONS+63)/64 };
+    uint64_t (*links)[WORDS]=calloc((size_t)fx_canvas.count,sizeof(*links));
+    unsigned char *seen=calloc((size_t)fx_canvas.count,1);uint64_t reach[WORDS]={0};
+    if(!links || !seen){free(links);free(seen);snprintf(w->status,sizeof(w->status),"CANNOT ALLOCATE CONNECTION SELECTION.");return;}
+    int root=-1; /* Wire traversal uses a set of starting endpoints. */
+    for(int i=0;i<fx_canvas.count;++i) {
+        FxCanvasNode *node=&fx_canvas.node[i];
+        if(node->at<0)continue;
+        TsSourceRoute raw=mx_route(node->row,pages,bank),route=mx_display_route(raw);
+        int control=fx_control_source(node->row);
+        for(int d=0;d<TS_FX_DESTINATIONS;++d) {
+            int to=fx_canvas.dest[d];if(to<0)continue;
+            int connected=control>=0?fx_visible_gain(node->row,d,pages,bank):
+                node->row.kind==3 && !raw.matrix_enabled?d==TS_FX_MOSAIC_BUS:
+                d<TS_MATRIX_DESTINATIONS && route.matrix_gain[d];
+            if(!connected)continue;
+            int target=fx_canvas.node[to].destination;
+            if(target<0)target=TS_FX_MOSAIC_BUS;
+            links[i][target/64]|=UINT64_C(1)<<(target%64);
+        }
+    }
+    /* Start from the exact selected cable endpoints, never the nearest card.
+       Keep a visited set: cycles and reconverging paths terminate safely. */
+    for(int j=0;j<wire_count;++j) {
+        MatrixRow source=wires[j].source;
+        int destination=wires[j].destination;
+        for(int i=0;i<fx_canvas.count;++i) {
+            FxCanvasNode *node=&fx_canvas.node[i];
+            int match=outputs ? node->destination==destination : mx_same(node->row,source);
+            if(match) {
+                seen[i]=1;
+                int d=node->destination;
+                if(d<0 && node->row.kind==2 && node->row.index==TS_MATRIX_MOSAIC)d=TS_FX_MOSAIC_BUS;
+                if(d>=0)reach[d/64]|=UINT64_C(1)<<(d%64);
+            }
+        }
+    }
+    if(recursive)for(int changed=1;changed;) {
+        changed=0;
+        for(int i=0;i<fx_canvas.count;++i) {
+            int dest=fx_canvas.node[i].destination;
+            if(dest<0 && fx_canvas.node[i].row.kind==2 && fx_canvas.node[i].row.index==TS_MATRIX_MOSAIC)dest=TS_FX_MOSAIC_BUS;
+            int match=0;
+            if(outputs)match=dest>=0 && (reach[dest/64]&(UINT64_C(1)<<(dest%64)));
+            else for(int k=0;k<WORDS;++k)match|=(links[i][k]&reach[k])!=0;
+            if(match && !seen[i]){seen[i]=1;changed=1;}
+            if(!seen[i])continue;
+            for(int k=0;outputs && k<WORDS;++k){uint64_t next=reach[k]|links[i][k];changed|=next!=reach[k];reach[k]=next;}
+            if(!outputs && dest>=0){uint64_t bit=UINT64_C(1)<<(dest%64);changed|=!(reach[dest/64]&bit);reach[dest/64]|=bit;}
+        }
+    }
+    free(wires);
+    fx_clear_selection();fx_clear_wires();w->effect_open=w->compressor_open=0;
+    for(int i=0;i<fx_canvas.count;++i)if(seen[i])w->selection[w->selection_count++]=fx_canvas.node[i].row;
+    free(links);free(seen);
+    snprintf(w->status,sizeof(w->status),"SELECTED %d %s CARDS / ALL MOVEMENTS / Z: FRAME SELECTION",w->selection_count,outputs?"DOWNSTREAM":"UPSTREAM");
+}
 static void fx_context_run(int action,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     MatrixWindow *w=&matrix_window;fx_canvas.popup=0;
     switch(action) {
     case FX_CONTEXT_ADD:fx_popup_open(fx_canvas.context_x,fx_canvas.context_y);break;
     case FX_CONTEXT_INPUTS:case FX_CONTEXT_OUTPUTS:fx_context_trace(action==FX_CONTEXT_OUTPUTS,pages,bank);break;
+    case FX_CONTEXT_WIRE_SOURCES:case FX_CONTEXT_WIRE_DESTINATIONS:
+    case FX_CONTEXT_WIRE_UPSTREAM:case FX_CONTEXT_WIRE_DOWNSTREAM:
+        fx_context_trace_wires(action==FX_CONTEXT_WIRE_DESTINATIONS || action==FX_CONTEXT_WIRE_DOWNSTREAM,
+            action==FX_CONTEXT_WIRE_UPSTREAM || action==FX_CONTEXT_WIRE_DOWNSTREAM,pages,bank);break;
     case FX_CONTEXT_CONSOLIDATE:fx_consolidate_choose(device,audio,ui,pages,bank);break;
     case FX_CONTEXT_GROUP:fx_group_create();break;
     case FX_CONTEXT_UNGROUP:fx_group_ungroup();break;
@@ -140,7 +213,7 @@ static void fx_context_run(int action,SDL_AudioDeviceID device,AudioState *audio
 }
 static int fx_context_event(SDL_Event *e,int x,int y,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
-    FxContextItem items[16];int count=fx_context_items(items),at=-1;
+    FxContextItem items[24];int count=fx_context_items(items),at=-1;
     if(e->type==SDL_KEYDOWN) {
         if(e->key.repeat)return 1;
         SDL_Keycode key=e->key.keysym.sym;
