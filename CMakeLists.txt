@@ -20,7 +20,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_mosaic.c src/ts_pattern_card.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c src/ts_performance_input.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
-             src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
+             src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_autopan.c
              src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_texture_fx.c src/ts_meta_fx.c src/ts_character_filter.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_dark_matter.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
