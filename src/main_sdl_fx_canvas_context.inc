@@ -1,6 +1,6 @@
 /* One action table serves mouse discovery and keyboard navigation. Context
    commands reuse the same Matrix transactions as their existing shortcuts. */
-enum { FX_CONTEXT_MENU=3,FX_CONTEXT_W=438,FX_CONTEXT_ROW=28,
+enum { FX_CONTEXT_MENU=3,FX_CONTEXT_W=438,FX_CONTEXT_ROW=24,
     FX_CONTEXT_ADD,FX_CONTEXT_INPUTS,FX_CONTEXT_OUTPUTS,FX_CONTEXT_CONSOLIDATE,
     FX_CONTEXT_WIRE_SOURCES,FX_CONTEXT_WIRE_DESTINATIONS,FX_CONTEXT_WIRE_UPSTREAM,FX_CONTEXT_WIRE_DOWNSTREAM,
     FX_CONTEXT_GROUP,FX_CONTEXT_UNGROUP,FX_CONTEXT_NAMES,FX_CONTEXT_TYPES,
@@ -77,7 +77,7 @@ static void fx_context_trace(int outputs,TsSamplePages *pages,TsInstrument *bank
     enum { WORDS=(TS_FX_DESTINATIONS+63)/64 };
     uint64_t (*links)[WORDS]=calloc((size_t)fx_canvas.count,sizeof(*links));
     unsigned char *seen=calloc((size_t)fx_canvas.count,1);uint64_t reach[WORDS]={0};
-    if(!links || !seen){free(wires);free(links);free(seen);snprintf(w->status,sizeof(w->status),"CANNOT ALLOCATE CONNECTION SELECTION.");return;}
+    if(!links || !seen){free(links);free(seen);snprintf(w->status,sizeof(w->status),"CANNOT ALLOCATE CONNECTION SELECTION.");return;}
     int root=-1;
     for(int i=0;i<fx_canvas.count;++i) {
         FxCanvasNode *node=&fx_canvas.node[i];if(mx_same(node->row,origin))root=i;
@@ -129,7 +129,7 @@ static void fx_context_trace_wires(int outputs,int recursive,TsSamplePages *page
     enum { WORDS=(TS_FX_DESTINATIONS+63)/64 };
     uint64_t (*links)[WORDS]=calloc((size_t)fx_canvas.count,sizeof(*links));
     unsigned char *seen=calloc((size_t)fx_canvas.count,1);uint64_t reach[WORDS]={0};
-    if(!links || !seen){free(links);free(seen);snprintf(w->status,sizeof(w->status),"CANNOT ALLOCATE CONNECTION SELECTION.");return;}
+    if(!links || !seen){free(wires);free(links);free(seen);snprintf(w->status,sizeof(w->status),"CANNOT ALLOCATE CONNECTION SELECTION.");return;}
     for(int i=0;i<fx_canvas.count;++i) {
         FxCanvasNode *node=&fx_canvas.node[i];
         if(node->at<0)continue;
