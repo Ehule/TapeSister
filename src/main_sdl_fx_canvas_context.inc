@@ -129,7 +129,7 @@ static void fx_context_trace_wires(int outputs,int recursive,TsSamplePages *page
     enum { WORDS=(TS_FX_DESTINATIONS+63)/64 };
     uint64_t (*links)[WORDS]=calloc((size_t)fx_canvas.count,sizeof(*links));
     unsigned char *seen=calloc((size_t)fx_canvas.count,1);uint64_t reach[WORDS]={0};
-    if(!links || !seen){free(links);free(seen);snprintf(w->status,sizeof(w->status),"CANNOT ALLOCATE CONNECTION SELECTION.");return;}
+    if(!links || !seen){free(wires);free(links);free(seen);snprintf(w->status,sizeof(w->status),"CANNOT ALLOCATE CONNECTION SELECTION.");return;}
     for(int i=0;i<fx_canvas.count;++i) {
         FxCanvasNode *node=&fx_canvas.node[i];
         if(node->at<0)continue;
