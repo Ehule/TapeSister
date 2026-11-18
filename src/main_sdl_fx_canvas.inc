@@ -640,7 +640,7 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
             for(unsigned k=0;k<c->map_count;++k)if(c->map[k].target==map->target && ts_mod_target(&w->controls,&c->map[k])==target)
                 active|=source->enabled && c->map[k].enabled && c->lane[c->map[k].lane].enabled;
             uint32_t custom=fx_wire_color(n->row,TS_MATRIX_EFFECT_BASE+target);int selected=fx_wire_selected(n->row,TS_MATRIX_EFFECT_BASE+target)>=0;
-            fx_cables_add_kind(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*.5f),selected?MX_YELLOW:custom?custom:active?0xffc4a4dcu:FX_DIM,1);
+            fx_cables_add_kind(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*.5f),fx_focus_color(selected?MX_YELLOW:custom?custom:active?0xffc4a4dcu:FX_DIM,n,to),1);
         }
     }
     fx_cables_end();
