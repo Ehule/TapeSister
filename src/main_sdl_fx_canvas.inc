@@ -23,6 +23,7 @@ static struct {
     int inspector_page,inspector_drag;uint64_t inspector_key;float place_x,place_y;
     FxWireList wires,before_wires;
     SDL_Cursor *divider_cursor;int divider_hover,divider_start,divider_pointer;
+    int bundles,focus_count;MatrixRow focus_rows[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];
     int help;uint32_t group_selected,properties_group;float properties_opacity;
     uint32_t revealed[TS_MATRIX_EFFECT_CAPACITY];
     int box_add,shift_moved;float gesture_zoom;uint64_t movement;int movement_popup,active_view;
@@ -55,8 +56,9 @@ static void fx_divider_cursor(int active)
     else if(fx_canvas.divider_hover)SDL_SetCursor(SDL_GetDefaultCursor());
     fx_canvas.divider_hover=active;
 }
+static void fx_navigation_free(void);
 static void fx_context_reset(void)
-{fx_properties_close();memset(fx_canvas.labels,0,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.group_selected=fx_canvas.properties_group=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;fx_canvas.active_view=0;
+{fx_navigation_free();fx_properties_close();memset(fx_canvas.labels,0,sizeof(fx_canvas.labels));fx_canvas.label_selected=-1;fx_canvas.label_editing=fx_canvas.properties=fx_canvas.confirm_delete=0;fx_canvas.group_selected=fx_canvas.properties_group=0;fx_canvas.replace_id=0;fx_divider_cursor(0);if(fx_canvas.divider_cursor)SDL_FreeCursor(fx_canvas.divider_cursor);fx_canvas.divider_cursor=NULL;svfx_close();fx_canvas.meta=0;fx_canvas.wire=fx_canvas.destination=-1;fx_canvas.fit=fx_canvas.popup=fx_canvas.confirm_clear=0;fx_canvas.inspector_key=0;fx_canvas.movement=0;fx_canvas.movement_popup=0;fx_canvas.active_view=0;fx_canvas.focus_count=0;fx_canvas.bundles=0;
  memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
  free(fx_canvas.properties_wires.items);fx_canvas.properties_wires=(FxWireList){0};
  free(fx_canvas.wires.items);free(fx_canvas.before_wires.items);fx_canvas.wires=(FxWireList){0};fx_canvas.before_wires=(FxWireList){0};}
@@ -570,6 +572,10 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
 }
 static SDL_Rect fx_text_object_rect(int index);
 static void fx_groups_clamp(void);
+static uint32_t fx_wire_color(MatrixRow source,int destination);
+static int fx_wire_selected(MatrixRow source,int destination);
+static int fx_select_wire(MatrixRow source,int destination,int toggle);
+#include "main_sdl_fx_canvas_navigation.inc"
 #include "main_sdl_fx_canvas_edit.inc"
 #include "main_sdl_fx_canvas_labels.inc"
 #include "main_sdl_fx_canvas_patch.inc"
@@ -583,6 +589,7 @@ static void fx_groups_clamp(void);
 static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
 {
     fx_groups_cache_background();
+    fx_navigation_prepare(pages,bank);
     fx_cables_begin();
     MatrixWindow *w=&matrix_window;
     fx_validate_wires(pages,bank);
@@ -600,7 +607,7 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
             TsSourceRoute raw=mx_route(n->row,pages,bank),r=mx_display_route(raw);
             if(n->row.kind==3 && !raw.matrix_enabled) {
                 int selected=fx_wire_selected(n->row,TS_FX_MOSAIC_BUS)>=0;uint32_t custom=fx_wire_color(n->row,TS_FX_MOSAIC_BUS);
-                if(bus && layer==(focus && selected))fx_cables_add(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(bus->x),fx_yf(bus->y+fx_node_h(bus)*.5f),selected?MX_YELLOW:custom?custom:FX_DIM);
+                if(bus && layer==(focus && selected)){float x,y,xx,yy;fx_navigation_endpoints(n,TS_FX_MOSAIC_BUS,&x,&y,&xx,&yy);fx_cables_add(x,y,xx,yy,fx_focus_color(selected?MX_YELLOW:custom?custom:FX_DIM,n,bus));}
                 continue;
             }
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
@@ -614,7 +621,8 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                 uint32_t color=selected?MX_YELLOW:custom?custom:delayed?MX_AMBER:sc?0xffbc98ccu:FX_CABLE;
                 if(focus && !related)color=0xff000000u | (((color&0x00fefefeu)>>1)+((FX_BG&0x00fefefeu)>>1));
                 float x=fx_xf(n->x+fx_node_w(n)),y=fx_yf(n->y+fx_node_h(n)*.5f),xx=fx_xf(to->x),yy=fx_yf(to->y+fx_node_h(to)*(sc?.8f:.5f));
-                fx_cables_add(x,y,xx,yy,color);
+                fx_navigation_endpoints(n,d,&x,&y,&xx,&yy);
+                fx_cables_add(x,y,xx,yy,fx_focus_color(color,n,to));
             }
         }
     }
@@ -636,6 +644,7 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
         }
     }
     fx_cables_end();
+    fx_navigation_badges();
 }
 static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
 {
@@ -677,6 +686,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
                 for(int shift=0;shift<24;shift+=8)mixed|=(uint32_t)(((color>>shift)&255)*(1-pulse)+((green>>shift)&255)*pulse)<<shift;
                 color=mixed;detail="PLAYING";
             }
+            color=fx_focus_color(color,n,n);
             fx_node_rect(x,y,width,height,title,compact,detail,color,fx_chosen(n->row),n->scale);
             if(n->destination>=0 && (!c || c->type!=TS_MATRIX_FX_MODULATOR))fx_rect(x-4,y+height/2-4,9,9,color);
             if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,color);

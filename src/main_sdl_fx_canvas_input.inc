@@ -289,12 +289,13 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(!left && !right)return 1;
     int modifiers=SDL_GetModState();
     if(left && (modifiers&KMOD_CTRL)){fx_begin_box(x,y,1,(modifiers&KMOD_SHIFT)!=0);return 1;}
+    fx_navigation_prepare(pages,bank);
     float nearest=64;int found=-1,destination=-1;
     for(int i=0;i<fx_canvas.count;++i) {
         FxCanvasNode *n=&fx_canvas.node[i];if(n->at<0)continue;
         for(int d=0;d<TS_FX_DESTINATIONS;++d)if(fx_visible_gain(n->row,d,pages,bank) && fx_canvas.dest[d]>=0) {
-            FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
-            float distance=fx_cable(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==TS_FX_MOSAIC_BUS || d==to->destination?.5f:.8f)),0,0,x,y);
+            float ax,ay,bx,by;fx_navigation_endpoints(n,d,&ax,&ay,&bx,&by);
+            float distance=fx_cable(ax,ay,bx,by,0,0,x,y);
             if(distance<nearest){nearest=distance;found=i;destination=d;}}}
     rug=fx_group_hit(x,y,0);
     if(found<0 && rug && !(modifiers&(KMOD_CTRL|KMOD_SHIFT))){
@@ -302,7 +303,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(left){fx_group_begin(rug,x,y);return 1;}}
     if(right) {
         if(found>=0) {
-            if(fx_wire_selected(fx_canvas.node[found].row,destination)<0){fx_clear_wires();fx_select_wire(fx_canvas.node[found].row,destination,0);}
+            if(fx_wire_selected(fx_canvas.node[found].row,destination)<0){fx_clear_wires();fx_navigation_select_bundle(&fx_canvas.node[found],destination,0);}
             fx_clear_selection();
         }
         fx_context_open(x,y,NULL);
@@ -311,7 +312,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(left && e->button.clicks>=2 && found<0){fx_canvas.wire=-1;fx_popup_open(x,y);return 1;}
     if(found>=0) {
         if(!(modifiers&KMOD_SHIFT)){fx_clear_selection();fx_clear_wires();}
-        fx_select_wire(fx_canvas.node[found].row,destination,(modifiers&KMOD_SHIFT)!=0);
+        fx_navigation_select_bundle(&fx_canvas.node[found],destination,(modifiers&KMOD_SHIFT)!=0);
         w->effect_open=w->compressor_open=0;
         fx_wire_selection_status();
     } else fx_begin_box(x,y,0,(modifiers&KMOD_SHIFT)!=0);
