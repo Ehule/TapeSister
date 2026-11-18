@@ -115,6 +115,7 @@ static int performance_command_apply(unsigned selected,int command,unsigned home
             if(i && audio->gallery->outgoing>=0)audio->gallery->canvas[audio->gallery->outgoing].paused=m->live_paused;
         }
         if(master)ts_master_clock_transport(&audio->sister.master_clock,command);
+        else if(command==2)++audio->sister.master_clock.reset_serial;
     }
     keyboard_sequence_ui(audio,ui);
     if(embedded)ts_tapehead_host_unlock();else if(device)SDL_UnlockAudioDevice(device);

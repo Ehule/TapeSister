@@ -244,6 +244,7 @@ const char *ts_sister_fx_type_name(TsSisterFxType type)
     case TS_SISTER_FX_DISPERSION: return "DISPERSE";
     case TS_SISTER_FX_RESONATOR: return "RESONATOR";
     case TS_SISTER_FX_SUNVOX: return "SUNVOX";
+    case TS_SISTER_FX_AUTOPAN: return "AUTO PAN";
     default: return "EMPTY";
     }
 }
@@ -273,6 +274,7 @@ static TsSisterFxSlotControls slot_controls(
     slot.parameter_c = c;
     slot.mix = mix;
     ts_character_filter_default(&slot.filter);
+    ts_autopan_settings_default(&slot.autopan);
     return slot;
 }
 
@@ -498,6 +500,7 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         TsSisterFxSlotControls *slot = &controls->slot[i];
         if ((int)i >= controls->slot_count) *slot = ts_sister_fx_empty_slot();
         slot->parameter_locks &= 31u;
+        if(slot->type==TS_SISTER_FX_AUTOPAN && !ts_autopan_settings_valid(&slot->autopan))ts_autopan_settings_default(&slot->autopan);
         ts_character_filter_sanitize(&slot->filter);
         TsGrainStates *bank=&slot->grain_states;
         bank->captured&=31u;if(bank->selected>TS_GRAIN_STATES)bank->selected=0;
@@ -1045,6 +1048,7 @@ int ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
         ramp_reset(&slot_state->engage, control->enabled ? 1.0f : 0.0f);
         for (size_t location = 0u;
              location < TS_SISTER_FX_LOCATION_COUNT; ++location) {
+            ts_autopan_init(&engine->autopan[slot][location],engine->sample_rate,control->id+(uint32_t)location*0x9e3779b9u);
             TsSisterReverbState *reverb = &engine->reverb[slot][location];
             TsSisterDelayState *delay = &engine->delay[slot][location];
             TsSisterDistortionState *distortion =
@@ -1708,6 +1712,13 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
         engine->resonator[slot][location].mix = 0;
     }
     switch (control->type) {
+    case TS_SISTER_FX_AUTOPAN: {
+        TsAutoPan *p=&engine->autopan[slot][location];
+        if(!p->sample_rate)ts_autopan_init(p,engine->timing.sample_rate,control->id+(uint32_t)location*0x9e3779b9u);
+        ts_autopan_configure(p,&control->autopan,control->parameter_a,control->parameter_b,control->parameter_c,control->mix,control->gain_db);
+        ts_autopan_transport(p,engine->timing.quarter,engine->timing.transport_serial);
+        return ts_autopan_process(p,input,gate,direct);
+    }
     case TS_SISTER_FX_REVERB:
         return reverb_process(&engine->timing, &engine->reverb[slot][location],
                               control, input, gate, direct,1);
@@ -1794,7 +1805,7 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         }
         direct *= slot_direct;
         if(measured){const TsSisterFxSlotControls *v=&state->active;
-            TsProfileEffectIdentity id={.generation=engine->profile_generation,.id=v->id,.type=v->type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->type>=TS_SISTER_FX_FILTER?v->type+1:v->type,.patch=v->sunvox.patch,.quantum=v->type==TS_SISTER_FX_SUNVOX?ts_sunvox_quantum(&v->sunvox):0};
+            TsProfileEffectIdentity id={.generation=engine->profile_generation,.id=v->id,.type=v->type==TS_SISTER_FX_AUTOPAN?TS_MATRIX_FX_AUTOPAN:v->type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->type>=TS_SISTER_FX_FILTER?v->type+1:v->type,.patch=v->sunvox.patch,.quantum=v->type==TS_SISTER_FX_SUNVOX?ts_sunvox_quantum(&v->sunvox):0};
             ts_profile_child_end(0,(unsigned)slot,0,&id,measured,state->has_pending);
         }
     }
@@ -2019,6 +2030,7 @@ struct TsSisterSingleFx {
         TsSisterTransientState transient;
         TsCharacterFilter filter;
         TsDispersion dispersion;
+        TsAutoPan autopan;
         TsResonator resonator;
     } state;
 };
@@ -2034,6 +2046,7 @@ TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint
     f->controls=(TsSisterFxSlotControls){type,1,TS_SISTER_FX_PLACE_POST,0,.5f,.5f,.5f,1,0};
     int ok=1;
     switch(type) {
+    case TS_SISTER_FX_AUTOPAN:ts_autopan_init(&f->state.autopan,rate,seed);ts_autopan_settings_default(&f->controls.autopan);break;
     case TS_SISTER_FX_DISPERSION:ts_dispersion_init(&f->state.dispersion,rate);break;
     case TS_SISTER_FX_RESONATOR:ok=ts_resonator_init(&f->state.resonator,rate);break;
     case TS_SISTER_FX_REVERB:ok=reverb_init(&f->state.reverb,rate);break;
@@ -2063,17 +2076,22 @@ void ts_sister_single_fx_free(TsSisterSingleFx *f)
 void ts_sister_single_fx_set(TsSisterSingleFx *f,const TsSisterFxSlotControls *c)
 {
     if(!f || !c || c->type!=f->controls.type)return;
-    f->controls=*c;ts_character_filter_sanitize(&f->controls.filter);f->controls.gain_db=clampf(c->gain_db,-12,12);
+    f->controls=*c;
+    if(c->type==TS_SISTER_FX_AUTOPAN)ts_autopan_configure(&f->state.autopan,&c->autopan,c->parameter_a,c->parameter_b,c->parameter_c,c->mix,c->gain_db);
+    ts_character_filter_sanitize(&f->controls.filter);f->controls.gain_db=clampf(c->gain_db,-12,12);
     f->controls.parameter_a=clampf(c->parameter_a,0,1);f->controls.parameter_b=clampf(c->parameter_b,0,1);
     f->controls.parameter_c=clampf(c->parameter_c,0,1);f->controls.mix=clampf(c->mix,0,1);
     f->controls.transient_power=c->transient_power>3?3:c->transient_power;
     if(!ts_transient_states_valid(f->controls.transient_power,&c->transient_states))
         memset(&f->controls.transient_states,0,sizeof(f->controls.transient_states));
 }
+void ts_sister_single_fx_transport(TsSisterSingleFx *f,double quarter,uint32_t serial)
+{if(f && f->controls.type==TS_SISTER_FX_AUTOPAN)ts_autopan_transport(&f->state.autopan,quarter,serial);}
 TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame input,float gate)
 {
     if(!f)return input;float direct=1;
     switch(f->controls.type) {
+    case TS_SISTER_FX_AUTOPAN:return ts_autopan_process(&f->state.autopan,input,gate,&direct);
     case TS_SISTER_FX_REVERB:return reverb_process(&f->timing,&f->state.reverb,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DISTORTION:return distortion_process(&f->timing,&f->state.distortion,&f->controls,input,gate,&direct);
@@ -2090,6 +2108,7 @@ void ts_sister_single_fx_process_span(TsSisterSingleFx *f,const TsStereoFrame *i
 {
     if(!f){memcpy(output,input,frames*sizeof(*output));return;}
     switch(f->controls.type) {
+    case TS_SISTER_FX_AUTOPAN:for(unsigned j=0;j<frames;++j)output[j]=ts_autopan_process(&f->state.autopan,input[j],gate[j],NULL);break;
     case TS_SISTER_FX_REVERB:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=reverb_process(&f->timing,&f->state.reverb,&f->controls,input[j],gate[j],&direct,1);}break;
     case TS_SISTER_FX_DELAY:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=delay_process(&f->timing,&f->state.delay,&f->controls,input[j],gate[j],&direct,1);}break;
     case TS_SISTER_FX_DISTORTION:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=distortion_process(&f->timing,&f->state.distortion,&f->controls,input[j],gate[j],&direct);}break;

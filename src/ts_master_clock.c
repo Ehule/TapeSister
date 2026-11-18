@@ -15,6 +15,7 @@ int ts_master_clock_valid(const TsMasterClockControls *c)
 }
 void ts_master_clock_transport(TsMasterClock *c,int command)
 {
+    if(command==2 || (command==1 && !c->running))++c->reset_serial;
     c->running=command==1;
     if(command==2)c->seconds=c->beats=c->phase=0;
 }

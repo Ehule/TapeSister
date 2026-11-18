@@ -67,7 +67,7 @@ static void fx_context_paint(void)
         int yy=y+32+i*FX_CONTEXT_ROW,hot=fx_canvas.popup_selected==i;
         if(hot)mx_rect(x+6,yy,FX_CONTEXT_W-12,FX_CONTEXT_ROW,FX_BG);
         uint32_t ink=!items[i].enabled?FX_DIM:hot?FX_FOCUS:FX_TEXT;
-        fx_panel_text(x+12,yy+6,266,22,items[i].name,ink,2,1);
+        fx_panel_text(x+12,yy+6,*items[i].shortcut?266:FX_CONTEXT_W-24,22,items[i].name,ink,2,1);
         fx_panel_text(x+FX_CONTEXT_W-152,yy+10,140,18,items[i].shortcut,FX_DIM,1,1);
     }
 }

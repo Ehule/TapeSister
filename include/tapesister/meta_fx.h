@@ -8,6 +8,7 @@ typedef struct {
     float value[5]; /* A, B, C, Mix, normalized Output (-12..+12 dB). */
     float filter[TS_CF_COUNT];
     uint8_t power;
+    TsAutoPanSettings autopan;
 } TsMetaStage;
 typedef struct {
     uint8_t macro, stage, field;
@@ -40,6 +41,7 @@ int ts_meta_read(TsMetaControls *, const char *field, const char *value);
 int ts_meta_save(const TsMetaControls *, const char *, char *, size_t);
 int ts_meta_load(TsMetaControls *, const char *, char *, size_t);
 TsMetaEngine *ts_meta_new(const TsMetaControls *, unsigned, uint32_t);
+void ts_meta_transport(TsMetaEngine *,double,uint32_t);
 void ts_meta_free(TsMetaEngine *);
 void ts_meta_set(TsMetaEngine *, const TsMetaControls *);
 int ts_meta_topology_matches(const TsMetaEngine *, const TsMetaControls *);

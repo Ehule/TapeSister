@@ -349,6 +349,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         if (fprintf(file, "slot%d_locks=%u\n", index + 1, (unsigned)slot->parameter_locks) < 0) return 0;
         char transient_key[40];snprintf(transient_key,sizeof(transient_key),"slot%d_transient",index+1);
         if(!ts_transient_states_write(file,transient_key,slot->transient_power,&slot->transient_states))return 0;
+        if(slot->type==TS_SISTER_FX_AUTOPAN){snprintf(transient_key,sizeof(transient_key),"slot%d_autopan",index+1);if(!ts_autopan_write(file,transient_key,&slot->autopan))return 0;}
         if(slot->type==TS_SISTER_FX_FILTER || slot->filter.captured){snprintf(transient_key,sizeof(transient_key),"slot%d_filter",index+1);if(!ts_character_filter_write(file,transient_key,&slot->filter))return 0;}
         const TsGrainStates *bank=&slot->grain_states;
         if(fprintf(file,"slot%d_state_mask=%u\nslot%d_state_selected=%u\nslot%d_state_seconds=%.9g\n",
@@ -459,6 +460,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
         if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
         if(!strcmp(slot_field,"id")){if(!parse_int(value,&integer) || integer<0)return 0;slot->id=(uint32_t)integer;return 1;}
+        if(!strcmp(slot_field,"autopan"))return ts_autopan_read(&slot->autopan,value);
         if(!strncmp(slot_field,"sunvox.",7))return ts_sunvox_read(&slot->sunvox,slot_field+7,value)==1;
         if(!strcmp(slot_field,"filter"))return ts_character_filter_read(&slot->filter,value);
         if(!strcmp(slot_field,"transient"))return ts_transient_states_read(value,&slot->transient_power,&slot->transient_states);

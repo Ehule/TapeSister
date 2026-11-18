@@ -13,6 +13,7 @@ typedef struct {
 } TsMasterClockControls;
 typedef struct {
     int running;
+    unsigned reset_serial; /* Runtime-only FX restart/home generation. */
     double seconds,beats,phase,quarter_seconds;
 } TsMasterClock;
 

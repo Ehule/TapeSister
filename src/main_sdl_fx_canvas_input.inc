@@ -281,6 +281,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(c->type==TS_MATRIX_FX_MODULATOR){modulation_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_SUNVOX){svfx_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_META){fx_canvas.meta=c->id;w->effect_open=0;return 1;}
+            if(c->type==TS_MATRIX_FX_AUTOPAN){autopan_open(audio,1,c->id,0,0);return 1;}
             if(c->type==TS_MATRIX_FX_FILTER){character_filter_matrix_open(c->id);return 1;}}
         if(fx_chosen(n->row)) {fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;fx_begin_transform(FX_DRAG_NODE);}
         return 1;

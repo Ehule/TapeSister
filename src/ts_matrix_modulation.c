@@ -8,7 +8,7 @@ static int child_at(const TsMatrixEffectControls *c,uint32_t child)
     return -1;
 }
 static int native_type(int type)
-{return type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:type>0 && type<6?type:0;}
+{return type==TS_MATRIX_FX_AUTOPAN?TS_SISTER_FX_AUTOPAN:type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:type>0 && type<6?type:0;}
 unsigned ts_mod_target_type(const TsMatrixEffectControls *c,uint32_t child)
 {int i=child_at(c,child);return child?(i<0?0:c->board.slot[i].type):(unsigned)c->type;}
 static int filter_field(unsigned f)

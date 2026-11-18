@@ -380,9 +380,9 @@ static void fx_ensure_visible(FxCanvasNode *n)
 static uint32_t fx_color(int type)
 {
     static const int roles[]={TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1,TS_COLOR_DATA1,
-        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5,TS_COLOR_DATA5};
+        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5,TS_COLOR_DATA5,TS_COLOR_DATA3};
     static const uint32_t colors[]={0xffc9b3d4u,0xff9ed2b2u,0xffe6c17du,0xffe5b36bu,
-        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u,0xffc9a0e6u};
+        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u,0xffc9a0e6u,0xffbba8dcu};
     type=SDL_clamp(type,0,TS_MATRIX_FX_TYPES-1);
     return FX_THEME(roles[type],colors[type]);
 }
@@ -640,7 +640,7 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
             for(unsigned k=0;k<c->map_count;++k)if(c->map[k].target==map->target && ts_mod_target(&w->controls,&c->map[k])==target)
                 active|=source->enabled && c->map[k].enabled && c->lane[c->map[k].lane].enabled;
             uint32_t custom=fx_wire_color(n->row,TS_MATRIX_EFFECT_BASE+target);int selected=fx_wire_selected(n->row,TS_MATRIX_EFFECT_BASE+target)>=0;
-            fx_cables_add_kind(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*.5f),selected?MX_YELLOW:custom?custom:active?0xffc4a4dcu:FX_DIM,1);
+            fx_cables_add_kind(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*.5f),fx_focus_color(selected?MX_YELLOW:custom?custom:active?0xffc4a4dcu:FX_DIM,n,to),1);
         }
     }
     fx_cables_end();

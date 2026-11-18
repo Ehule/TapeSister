@@ -67,7 +67,7 @@ static void meta_fx_open(uint32_t id) {
     if (!*meta_fx_window.path)
         snprintf(meta_fx_window.path, sizeof(meta_fx_window.path), "meta-fx.tsmfx");
     snprintf(meta_fx_window.status, sizeof(meta_fx_window.status),
-             "CHAIN: EDIT STAGES | MAPS: LINK ONE MACRO TO MULTIPLE CONTROLS");
+             "RIGHT-CLICK AUTO PAN TYPE: EDIT OSCILLATOR | MAPS: ASSIGN MACROS");
     SDL_ShowWindow(meta_fx_window.window);
     SDL_RaiseWindow(meta_fx_window.window);
 }
@@ -360,10 +360,13 @@ static int meta_fx_event(const SDL_Event *e, SDL_AudioDeviceID device, AudioStat
             if (left && x >= 12 && x < 36 && row < c->count) {
                 s->enabled = !s->enabled;
                 changed = 1;
-            } else if ((left || wheel) && x >= 40 && x < 140) {
+            } else if ((left || wheel || (down && e->button.button==SDL_BUTTON_RIGHT)) && x >= 40 && x < 140) {
+                if(down && e->button.button==SDL_BUTTON_RIGHT && row<c->count && s->type==TS_SISTER_FX_AUTOPAN){
+                    meta_fx_history_finish(device,audio,pages,bank);autopan_open(audio,3,meta_fx_window.node,0,row);return 1;}
                 int type = row < c->count ? s->type : 0;
-                type = (type + (wheel ? (int)lrintf(wheel_event_delta(e, 0)) : 1) + TS_SISTER_FX_SUNVOX) %
-                       TS_SISTER_FX_SUNVOX;
+                int direction=wheel && wheel_event_delta(e,0)<0?-1:1;
+                type=(type+direction+TS_SISTER_FX_TYPE_COUNT)%TS_SISTER_FX_TYPE_COUNT;
+                if(type==TS_SISTER_FX_SUNVOX)type=(type+direction+TS_SISTER_FX_TYPE_COUNT)%TS_SISTER_FX_TYPE_COUNT;
                 ts_meta_stage_default(s, type);
                 for (int j = c->map_count - 1; j >= 0; --j)
                     if (c->map[j].stage == row &&

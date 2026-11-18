@@ -3,6 +3,7 @@
 
 #include "tapesister/sample.h"
 #include "tapesister/transient.h"
+#include "tapesister/autopan.h"
 #include "tapesister/texture_fx.h"
 #include "tapesister/character_filter.h"
 #include "tapesister/sister_effects.h"
@@ -32,6 +33,7 @@ typedef enum {
     TS_SISTER_FX_DISPERSION,
     TS_SISTER_FX_RESONATOR,
     TS_SISTER_FX_SUNVOX,
+    TS_SISTER_FX_AUTOPAN,
     TS_SISTER_FX_TYPE_COUNT
 } TsSisterFxType;
 
@@ -83,6 +85,7 @@ typedef struct {
     TsCharacterFilterControls filter;
     uint32_t id; /* Saved identity; follows the processor when slots reorder. */
     TsSunVoxControls sunvox;
+    TsAutoPanSettings autopan;
 } TsSisterFxSlotControls;
 
 typedef struct {
@@ -331,6 +334,7 @@ typedef struct {
     float smooth_12ms, smooth_18ms, smooth_20ms, smooth_24ms;
     float smooth_30ms, smooth_35ms, smooth_55ms;
     uint32_t sample_rate;
+    double quarter;uint32_t transport_serial;
 } TsSisterFxTiming;
 
 /* One chosen processor, one location: no unused delay/reverb/grain buffers. */
@@ -345,6 +349,7 @@ typedef struct {
     TsPedalboardSlot *garbage[2*TS_SISTER_FX_SLOT_COUNT*TS_SISTER_FX_LOCATION_COUNT];
 } TsSisterSunVoxPlan;
 TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint32_t seed);
+void ts_sister_single_fx_transport(TsSisterSingleFx *,double,uint32_t);
 void ts_sister_single_fx_free(TsSisterSingleFx *fx);
 void ts_sister_single_fx_set(TsSisterSingleFx *fx,const TsSisterFxSlotControls *controls);
 TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *fx,TsStereoFrame input,float gate);
@@ -364,6 +369,7 @@ typedef struct {
     TsSisterTransientState
         transient[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsCharacterFilter filter[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    TsAutoPan autopan[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsDispersion dispersion[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsResonator resonator[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     /* Prepared on init/reconfigure, never recomputed per audio sample. */
