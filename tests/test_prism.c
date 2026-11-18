@@ -116,7 +116,7 @@ static void check_pitch_and_focus(unsigned rate)
 
 static void check_state(void)
 {
-    TsSisterProjectState state, loaded;
+    static TsSisterProjectState state, loaded;
     char error[160]; int present;
     ts_sister_project_state_init(&state, 48000);
     assert(!state.parameters.prism.enabled);
@@ -169,7 +169,7 @@ static void check_state(void)
     assert(!loaded.parameters.prism.input_shape && !loaded.parameters.prism.output_shape);
     assert(loaded.parameters.prism.color==.5f);
     remove("prism-state.ini");
-    TsSisterPresetBank bank, restored;
+    static TsSisterPresetBank bank, restored;
     ts_sister_preset_bank_init(&bank,48000);
     assert(ts_sister_preset_save_new(&bank,"PRISM TEST",&state.parameters,48000,error,sizeof(error)));
     assert(ts_sister_preset_save(&bank,"prism-presets.ini",error,sizeof(error)));

@@ -22,7 +22,7 @@ static void check_extended_capacity(void)
     assert(ts_sister_project_state_save_file(&state,"prism-24.ini",error,sizeof(error)));
     assert(ts_sister_project_state_load_file(&loaded,"prism-24.ini",48000,&present,error,sizeof(error)));
     assert(present && !memcmp(&c,&loaded.parameters.prism,sizeof(c)));remove("prism-24.ini");
-    TsSisterPresetBank bank,restored;ts_sister_preset_bank_init(&bank,48000);
+    static TsSisterPresetBank bank,restored;ts_sister_preset_bank_init(&bank,48000);
     assert(ts_sister_preset_save_new(&bank,"TWENTY FOUR",&state.parameters,48000,error,sizeof(error)));
     assert(ts_sister_preset_save(&bank,"prism-24-presets.ini",error,sizeof(error)));
     ts_sister_preset_bank_init(&restored,48000);

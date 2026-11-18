@@ -67,13 +67,13 @@ static void engine_tests(void)
 
 static void persistence_tests(void)
 {
-    TsConfig config,loaded;ts_config_init(&config);char error[160];
+    static TsConfig config,loaded;ts_config_init(&config);char error[160];
     ts_router_move(&config.router,0,3);config.router.bypass_mask=5;config.router.solo=2;
     config.router.master_mix=1;
     assert(ts_config_save(&config,"test-router-config.ini",error,sizeof(error)));
     assert(ts_config_load(&loaded,"test-router-config.ini",error,sizeof(error)));
     assert(!memcmp(&loaded.router,&config.router,sizeof(config.router)));
-    TsSisterProjectState state,read;ts_sister_project_state_init(&state,48000);state.router=config.router;
+    static TsSisterProjectState state,read;ts_sister_project_state_init(&state,48000);state.router=config.router;
     assert(ts_sister_project_state_save_file(&state,"test-router-project.ini",error,sizeof(error)));int present=0;
     assert(ts_sister_project_state_load_file(&read,"test-router-project.ini",48000,&present,error,sizeof(error)) && present);
     assert(!memcmp(&state.router,&read.router,sizeof(state.router)));

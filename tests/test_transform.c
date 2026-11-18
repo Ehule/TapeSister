@@ -1659,9 +1659,9 @@ static void destructive_material_macro_tests(void)
 
 static void transform_ui_contract_tests(void)
 {
-    TsInstrument instrument;
-    TsUiState ui;
-    TsFramebuffer framebuffer;
+    static TsInstrument instrument;
+    static TsUiState ui;
+    static TsFramebuffer framebuffer;
     size_t first;
     size_t last;
     size_t view_first;

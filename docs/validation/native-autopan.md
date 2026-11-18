@@ -34,3 +34,10 @@ hosts, project/preset/MetaFX recall, and malformed settings rejection. It is in
 the Windows/Linux PR regression manifest with assertions enabled in Release.
 The SDL Canvas controller test exercises add/edit/undo/redo/Escape and both
 consolidation destinations, plus the original Pedalboard editor.
+
+The standard PR suite also runs capture, spatial, transform, Prism, compressor
+and both router regression targets. Their large UI/configuration/project
+fixtures, and the core test's fixtures, live outside the thread stack; all
+initialization, persistence checks and assertions remain in place. This avoids
+stack exhaustion under the normal 8 MiB Linux desktop limit without increasing
+that limit or reducing coverage.

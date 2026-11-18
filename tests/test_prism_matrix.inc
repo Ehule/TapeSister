@@ -111,7 +111,7 @@ static void check_prism_matrix(void)
     char error[160];assert(ts_prism_bank_save(bank,"matrix-prism.ini",error,sizeof(error)));
     assert(ts_prism_bank_load(loaded,"matrix-prism.ini",error,sizeof(error)));
     assert(!memcmp(&loaded->entries[0].controls,&expected,sizeof(expected)));
-    TsSisterProjectState project,restored;int present;ts_sister_project_state_init(&project,48000);project.parameters.prism=c;
+    static TsSisterProjectState project,restored;int present;ts_sister_project_state_init(&project,48000);project.parameters.prism=c;
     assert(ts_sister_project_state_save_file(&project,"matrix-project.ini",error,sizeof(error)));
     assert(ts_sister_project_state_load_file(&restored,"matrix-project.ini",48000,&present,error,sizeof(error)));
     assert(present && !memcmp(&restored.parameters.prism,&expected,sizeof(expected)));

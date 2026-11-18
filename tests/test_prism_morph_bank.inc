@@ -38,7 +38,7 @@ static void check_prism_morph_bank(void)
     bank->count=1;strcpy(bank->entries[0].name,"ALPHABET STATES");bank->entries[0].controls=c;
     char error[160];assert(ts_prism_bank_save(bank,"prism-alphabet.ini",error,sizeof(error)));
     assert(ts_prism_bank_load(loaded,"prism-alphabet.ini",error,sizeof(error)) && !memcmp(bank,loaded,sizeof(*bank)));
-    TsSisterProjectState project,restored;int present;
+    static TsSisterProjectState project,restored;int present;
     ts_sister_project_state_init(&project,48000);project.parameters.prism=c;
     assert(ts_sister_project_state_save_file(&project,"prism-alphabet-project.ini",error,sizeof(error)));
     assert(ts_sister_project_state_load_file(&restored,"prism-alphabet-project.ini",48000,&present,error,sizeof(error)));

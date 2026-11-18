@@ -76,7 +76,7 @@ static void check_prism_performance(void)
     assert(ts_prism_bank_load(restored,"performance-prism.ini",error,sizeof(error)) && !memcmp(bank,restored,sizeof(*bank)));
     FILE *bad=fopen("performance-prism-bad.ini","wb");assert(bad);fputs("TapeSister Prism Presets 1\nPreset=0\nP2.main.drift_rate.0=nan\n",bad);fclose(bad);
     assert(!ts_prism_bank_load(restored,"performance-prism-bad.ini",error,sizeof(error)) && !memcmp(bank,restored,sizeof(*bank)));
-    TsSisterProjectState state,loaded;int present;
+    static TsSisterProjectState state,loaded;int present;
     ts_sister_project_state_init(&state,48000);state.parameters.prism=c;
     assert(ts_sister_project_state_save_file(&state,"performance-project.ini",error,sizeof(error)));
     assert(ts_sister_project_state_load_file(&loaded,"performance-project.ini",48000,&present,error,sizeof(error)));

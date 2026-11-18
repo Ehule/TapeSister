@@ -122,14 +122,14 @@ static void transitions_and_motion(void)
 }
 static void persistence(void)
 {
-    TsConfig c,loaded;ts_config_init(&c);ts_spatial_ring(&c.spatial,8,1);c.spatial.enabled=1;c.spatial.stereo_pair=7;
+    static TsConfig c,loaded;ts_config_init(&c);ts_spatial_ring(&c.spatial,8,1);c.spatial.enabled=1;c.spatial.stereo_pair=7;
     c.spatial.value[3]=.42f;c.spatial.lfo_targets=5;c.spatial.captured=3;c.spatial.state[1][2]=.71f;c.spatial.morph_target=1;
     c.speakers.count=10;c.speakers.output[9]=15;snprintf(c.speakers.name[9],TS_SPEAKER_NAME,"REAR WALL");
     char error[160];assert(ts_config_save(&c,"spatial-test.ini",error,sizeof(error)));
     int ok=ts_config_load(&loaded,"spatial-test.ini",error,sizeof(error));if(!ok)fprintf(stderr,"%s\n",error);assert(ok);
     assert(!memcmp(&c.spatial,&loaded.spatial,sizeof(c.spatial)));
     assert(!memcmp(&c.speakers,&loaded.speakers,sizeof(c.speakers)));
-    TsSisterProjectState state,read;ts_sister_project_state_init(&state,48000);state.spatial=c.spatial;
+    static TsSisterProjectState state,read;ts_sister_project_state_init(&state,48000);state.spatial=c.spatial;
     assert(ts_sister_project_state_save_file(&state,"spatial-project.ini",error,sizeof(error)));int present=0;
     assert(ts_sister_project_state_load_file(&read,"spatial-project.ini",48000,&present,error,sizeof(error))&&present);
     assert(!memcmp(&state.spatial,&read.spatial,sizeof(state.spatial)));
