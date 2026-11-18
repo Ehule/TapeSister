@@ -41,6 +41,23 @@ static void context_actions(void)
     assert(fx_chosen(inherited) && fx_chosen(parked));
     assert(!fx_chosen(instance(ids[1])->row) && !fx_chosen(instance(ids[2])->row) && !fx_chosen(instance(ids[3])->row));
     assert(w->history_cursor==history && audio.sister.matrix_effects.current[1]==engine);
+    /* Cable actions operate on selected edges, not the last right-clicked card. */
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_SOURCES);
+    assert(w->selection_count==1 && fx_chosen(instance(ids[0])->row));
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_DESTINATIONS);
+    assert(w->selection_count==1 && fx_chosen(instance(ids[1])->row));
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_UPSTREAM);
+    assert(fx_chosen(instance(ids[0])->row) && fx_chosen(node(TS_MATRIX_MOSAIC)->row));
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_DOWNSTREAM);
+    assert(fx_chosen(instance(ids[1])->row) && fx_chosen(instance(ids[2])->row));
     context_card(ids[1]);context_action(FX_CONTEXT_OUTPUTS);
     assert(w->selection_count==2 && fx_chosen(instance(ids[2])->row) && fx_chosen((MatrixRow){.kind=5,.index=TS_MATRIX_NODES}));
     assert(!fx_chosen(instance(ids[0])->row) && !fx_chosen(instance(ids[1])->row) && !fx_chosen(instance(ids[3])->row));
