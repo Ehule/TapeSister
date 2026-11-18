@@ -892,6 +892,9 @@ add_test(NAME tapesister_router_tests COMMAND tapesister_router_tests)
 add_executable(tapesister_insert_tests tests/test_insert.c)
 target_link_libraries(tapesister_insert_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
+add_executable(tapesister_autopan_tests tests/test_autopan.c)
+target_link_libraries(tapesister_autopan_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_autopan_tests COMMAND tapesister_autopan_tests)
 
 # These DSP/core/project fixtures keep multiple instruments/runtimes alive
 # while processing or calling the real Save/Open path. Match the application's
