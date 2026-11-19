@@ -88,7 +88,7 @@ static void navigation(void)
         component(g);assert(sister.model.visible && sister.model.fx_page==g-TS_THEME_SISTER);
     }
     component(TS_THEME_TRACKER);assert(u.tracker_open && u.tracker_embedded_frame && !sister.model.visible);
-    component(TS_THEME_EQ);assert(u.master_eq_open && ts_ui_master_eq_visible(&u));
+    component(TS_THEME_EQ);assert(eq_editor.visible && !u.master_eq_open && ts_ui_master_eq_visible(eq_editor.model));eq_editor_hide();
     component(TS_THEME_ARP);assert(u.keyboard_sequence_open && ts_ui_keyboard_sequence_visible(&u));
     component(TS_THEME_CANVAS);assert(!u.keyboard_sequence_open);
     component(TS_THEME_ROUTER);assert(matrix_window.visible && !matrix_window.compressor_open);

@@ -112,6 +112,26 @@ static int eq_editor_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID devic
     if(e->type==SDL_WINDOWEVENT && e->window.event==SDL_WINDOWEVENT_FOCUS_LOST) {
         eq_editor_history_finish(device,audio,pages,bank);eq_editor.model->master_eq_drag=0;return 1;
     }
+    if(e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL || e->type==SDL_MOUSEMOTION) {
+        int rx,ry,x,y;
+        if(e->type==SDL_MOUSEWHEEL)wheel_event_mouse(e,&rx,&ry);
+        else if(e->type==SDL_MOUSEMOTION){rx=e->motion.x;ry=e->motion.y;}
+        else {rx=e->button.x;ry=e->button.y;}
+        logical_mouse(eq_editor.window,rx,ry,&x,&y);
+        if(e->type==SDL_MOUSEBUTTONDOWN && (y<38 || y>=379))return 1;
+        if(ui->midi_learn_active) {
+            TsUiState *model=eq_editor.model;model->master_eq_presets_open=0;
+            if(eq_editor.source<0 && e->type==SDL_MOUSEBUTTONDOWN) {
+                int node=ts_ui_master_eq_node(model,x,y);
+                if(y>=252 && y<276 && x>=20 && x<448 && (x-20)%88<76)node=(x-20)/88;
+                if(node>=0)model->master_eq_band=node;
+                else {char target[TS_MIDI_TARGET_ID_MAX]={0};
+                    ts_ui_master_eq_midi_target(model,x,y,target,sizeof(target));midi_learn_click(ui,sister,target);
+                    snprintf(model->status,sizeof(model->status),"%s",ui->status);}
+            }
+            return 1;
+        }
+    }
     mx_bind_mosaic(ui,pages);matrix_window.layout=&audio->sister.matrix_layout;
     if(e->type==SDL_KEYDOWN && (e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_z || e->key.keysym.sym==SDLK_y)) {
         eq_editor_history_finish(device,audio,pages,bank);
@@ -120,6 +140,8 @@ static int eq_editor_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID devic
     int edit=e->type==SDL_MOUSEBUTTONDOWN || e->type==SDL_MOUSEWHEEL;
     if(edit && !eq_editor.before){mx_original(device,audio,pages,bank);eq_editor.before=mx_snapshot(device,audio,pages,bank);if(!eq_editor.before)return 1;}
     TsUiState *model=eq_editor.model;
+    model->config.master_output_percent=ui->config.master_output_percent;
+    model->master_output=ui->master_output;
     if(device)SDL_LockAudioDevice(device);
     TsMasterEqControls *live=eq_editor_curve(audio,ui);if(live)model->config.master_eq=*live;
     if(device)SDL_UnlockAudioDevice(device);
@@ -128,7 +150,9 @@ static int eq_editor_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID devic
     master_eq_event(e,eq_editor.window,device,audio,model,sister);
     effect_eq_handling=0;
     if(eq_editor.source>=0 && memcmp(&before,&model->config.master_eq,sizeof(before)))eq_editor_publish(device,audio,ui,sister);
-    else if(eq_editor.source<0){ui->config.master_eq=model->config.master_eq;ui->config.eq_morph=model->config.eq_morph;if(edit)ui->project_modified=1;}
+    else if(eq_editor.source<0){ui->config.master_eq=model->config.master_eq;ui->config.eq_morph=model->config.eq_morph;
+        ui->config.master_output_percent=model->config.master_output_percent;ui->master_output=model->master_output;
+        if(edit)ui->project_modified=1;}
     if(e->type==SDL_MOUSEBUTTONUP || (edit && !model->master_eq_drag))eq_editor_history_finish(device,audio,pages,bank);
     if(!model->master_eq_open){eq_editor_history_finish(device,audio,pages,bank);eq_editor_hide();editor_return_window(eq_editor.return_id);}
     return 1;

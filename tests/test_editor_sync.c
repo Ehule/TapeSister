@@ -153,6 +153,15 @@ static void eq_window_behavior(void)
     eq_editor_open(0,&audio,&ui,-1,0,0,origin);assert(eq_editor.visible && !ui.master_eq_open);
     assert(SDL_GetWindowFlags(eq_editor.window)&SDL_WINDOW_RESIZABLE);
     SDL_SetWindowSize(eq_editor.window,800,500);eq_editor_paint(0,&audio,&ui);
+    SDL_Event level={0};level.type=SDL_MOUSEBUTTONDOWN;level.button.windowID=eq_editor.id;level.button.button=SDL_BUTTON_LEFT;
+    level.button.x=419*800/640;level.button.y=350*500/400;
+    assert(eq_editor_event(&level,main_window,0,&audio,&ui,&sister,&pages,&bank));
+    assert(ui.config.master_output_percent==50 && fabsf(ui.master_output.gain-.5f)<.01f);
+    level.type=SDL_MOUSEBUTTONUP;assert(eq_editor_event(&level,main_window,0,&audio,&ui,&sister,&pages,&bank));
+    ui.midi_learn_active=1;level.type=SDL_MOUSEBUTTONDOWN;level.button.x=60*800/640;level.button.y=312*500/400;
+    assert(eq_editor_event(&level,main_window,0,&audio,&ui,&sister,&pages,&bank));
+    assert(!strcmp(ui.midi_learn_pending,"main.eq.band.1.0"));ui.midi_learn_active=0;ui.midi_learn_pending[0]=0;
+    if(getenv("TS_TEST_EDITOR_PPM"))assert(ts_ui_write_ppm(&eq_editor.fb,getenv("TS_TEST_EDITOR_PPM")));
     SDL_Event escape={0};escape.type=SDL_KEYDOWN;escape.key.windowID=eq_editor.id;escape.key.keysym.sym=SDLK_ESCAPE;
     assert(eq_editor_event(&escape,main_window,0,&audio,&ui,&sister,&pages,&bank));assert(!eq_editor.visible && ui.mosaic_open==mosaic && sister.model.visible);
     TsSisterParameters next=audio.sister.parameters;sister_fx_slot_select_type(&next.fx.slot[0],TS_SISTER_FX_EQ);
