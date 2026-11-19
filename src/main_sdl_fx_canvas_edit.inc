@@ -173,6 +173,7 @@ static int fx_begin_box(int x,int y,int wires,int add)
 }
 static void fx_box_update(int x,int y,TsSamplePages *pages,TsInstrument *bank)
 {
+    fx_navigation_prepare(pages,bank);
     MatrixWindow *w=&matrix_window;int ax=SDL_min((int)fx_canvas.pointer_x,x),ay=SDL_min((int)fx_canvas.pointer_y,y);
     SDL_Rect box={ax,ay,abs(x-(int)fx_canvas.pointer_x)+1,abs(y-(int)fx_canvas.pointer_y)+1};
     fx_canvas.label_selected=-1;
@@ -192,9 +193,8 @@ static void fx_box_update(int x,int y,TsSamplePages *pages,TsInstrument *bank)
             if(SDL_HasIntersection(&box,&rect) && !fx_chosen(n->row))w->selection[w->selection_count++]=n->row;
         } else if(n->at>=0) {
             for(int d=0;d<TS_FX_DESTINATIONS;++d)if(fx_visible_gain(n->row,d,pages,bank) && fx_canvas.dest[d]>=0) {
-                FxCanvasNode *to=&fx_canvas.node[fx_canvas.dest[d]];
-                if(fx_cable_crosses(fx_xf(n->x+fx_node_w(n)),fx_yf(n->y+fx_node_h(n)*.5f),
-                    fx_xf(to->x),fx_yf(to->y+fx_node_h(to)*(d==TS_FX_MOSAIC_BUS || d==to->destination?.5f:.8f)),box) && !fx_select_wire(n->row,d,0)) {
+                float ax,ay,bx,by;fx_navigation_endpoints(n,d,&ax,&ay,&bx,&by);
+                if(fx_cable_crosses(ax,ay,bx,by,box) && !fx_select_wire(n->row,d,0)) {
                     fx_cancel_gesture();return;
                 }
             }

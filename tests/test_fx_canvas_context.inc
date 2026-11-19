@@ -41,6 +41,23 @@ static void context_actions(void)
     assert(fx_chosen(inherited) && fx_chosen(parked));
     assert(!fx_chosen(instance(ids[1])->row) && !fx_chosen(instance(ids[2])->row) && !fx_chosen(instance(ids[3])->row));
     assert(w->history_cursor==history && audio.sister.matrix_effects.current[1]==engine);
+    /* Cable actions operate on selected edges, not the last right-clicked card. */
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_SOURCES);
+    assert(w->selection_count==1 && fx_chosen(instance(ids[0])->row));
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_DESTINATIONS);
+    assert(w->selection_count==1 && fx_chosen(instance(ids[1])->row));
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_UPSTREAM);
+    assert(fx_chosen(instance(ids[0])->row) && fx_chosen(node(TS_MATRIX_MOSAIC)->row));
+    fx_clear_selection();fx_clear_wires();
+    assert(fx_select_wire(instance(ids[0])->row,base+1,0));
+    fx_context_open(300,300,NULL);context_action(FX_CONTEXT_WIRE_DOWNSTREAM);
+    assert(fx_chosen(instance(ids[1])->row) && fx_chosen(instance(ids[2])->row));
     context_card(ids[1]);context_action(FX_CONTEXT_OUTPUTS);
     assert(w->selection_count==2 && fx_chosen(instance(ids[2])->row) && fx_chosen((MatrixRow){.kind=5,.index=TS_MATRIX_NODES}));
     assert(!fx_chosen(instance(ids[0])->row) && !fx_chosen(instance(ids[1])->row) && !fx_chosen(instance(ids[3])->row));
@@ -56,6 +73,13 @@ static void context_actions(void)
     assert(!fx_chosen(instance(ids[1])->row) && !fx_chosen(instance(ids[3])->row));
     context_card(ids[1]);context_action(FX_CONTEXT_INPUTS);
     assert(fx_chosen(instance(ids[0])->row) && fx_chosen(instance(ids[2])->row) && fx_chosen(instance(ids[3])->row));
+    context_card(ids[1]);context_action(FX_CONTEXT_NETWORK);
+    assert(fx_chosen(instance(ids[0])->row) && fx_chosen(instance(ids[3])->row) && fx_chosen(inherited) && fx_chosen(parked));
+    int network_count=w->selection_count;history=w->history_cursor;
+    fx_context_open(300,200,NULL);context_action(FX_CONTEXT_FOCUS);
+    assert(fx_canvas.focus_count==network_count && fx_focus_contains(inherited));
+    fx_clear_selection();assert(fx_canvas.focus_count==network_count); /* focus survives deselect */
+    fx_context_open(300,200,NULL);context_action(FX_CONTEXT_FOCUS);assert(!fx_canvas.focus_count && w->history_cursor==history);
     /* The same menu drives grouping and arrangement, each with one undo step. */
     fx_select(instance(ids[0]),0);fx_select(instance(ids[1]),1);context_card(ids[1]);history=w->history_cursor;
     context_action(FX_CONTEXT_GROUP);assert(w->layout->group_count==1 && fx_canvas.group_selected && w->history_cursor==history+1);
@@ -67,5 +91,28 @@ static void context_actions(void)
     /* The canvas mouse pan remains available. */
     pointer(SDL_MOUSEBUTTONDOWN,500,500,SDL_BUTTON_MIDDLE,1);assert(w->drag==FX_DRAG_PAN);
     pointer(SDL_MOUSEBUTTONUP,500,500,SDL_BUTTON_MIDDLE,1);assert(!w->drag);
+    /* Bundles retain per-cable identity and never cross movement/color groups. */
+    MatrixRow members[2];int member_count=0;
+    for(int i=0;i<fixture->count && member_count<2;++i)if(fixture->routes[i].row.kind==0 &&
+        (!member_count || fixture->routes[i].row.canvas==members[0].canvas)) {
+        members[member_count++]=fixture->routes[i].row;
+        fixture->routes[i].route=(TsSourceRoute){.matrix_enabled=1};fixture->routes[i].route.matrix_gain[base]=1000;
+    }
+    assert(member_count==2 && mx_apply(fixture,0,&audio,&ui,&pages,&bank));edit_settle();fx_build(&pages,&bank);
+    fx_clear_selection();fx_clear_wires();history=w->history_cursor;
+    fx_context_open(300,200,NULL);context_action(FX_CONTEXT_BUNDLE);assert(fx_canvas.bundles);
+    fx_navigation_prepare(&pages,&bank);FxCanvasNode *source=NULL;
+    for(int i=0;i<fx_canvas.count;++i)if(mx_same(fx_canvas.node[i].row,members[0]))source=&fx_canvas.node[i];
+    assert(source);FxNavigationBundle *bundle=fx_navigation_bundle(source,base);assert(bundle && bundle->count>=2 && !bundle->expanded);
+    int bundle_count=bundle->count;float bx,by,ex,ey;fx_navigation_endpoints(source,base,&bx,&by,&ex,&ey);assert(bx==bundle->x && by==bundle->y);
+    fx_navigation_select_bundle(source,base,0);assert(fx_canvas.wires.count==bundle_count);
+    fx_navigation_prepare(&pages,&bank);assert(fx_navigation_bundle(source,base)->expanded && w->history_cursor==history);
+    fx_clear_wires();fx_context_open(300,200,NULL);context_action(FX_CONTEXT_BUNDLE);assert(!fx_canvas.bundles);
+    /* Paint and hit testing reuse geometry; style/density changes invalidate it. */
+    FxCablePath path;fx_cable_path(&path,123.25f,222,633,444);uint64_t hits=fx_path_hits;
+    fx_cable_path(&path,123.25f,222,633,444);assert(fx_path_hits==hits+1);
+    uint64_t builds=fx_path_builds;w->layout->canvas_straight=!w->layout->canvas_straight;
+    fx_cable_path(&path,123.25f,222,633,444);assert(fx_path_builds==builds+1);w->layout->canvas_straight=!w->layout->canvas_straight;
+    fx_clear_selection();fx_clear_wires();fx_canvas.focus_count=fx_canvas.bundles=0;
     free(fixture);assert(mx_apply(saved,0,&audio,&ui,&pages,&bank));free(saved);edit_settle();matrix_history_clear();fx_view(1,&pages,&bank);
 }

@@ -55,12 +55,34 @@ static void fx_curve_split(FxCablePath *path,FxPoint a,FxPoint b,FxPoint c,FxPoi
     fx_curve_split(path,a,ab,abc,mid,depth+1);
     fx_curve_split(path,mid,bcd,cd,d,depth+1);
 }
-static void fx_cable_path(FxCablePath *path,float x,float y,float xx,float yy)
+static void fx_cable_path_uncached(FxCablePath *path,float x,float y,float xx,float yy)
 {
     path->count=1;path->point[0]=(FxPoint){x,y};
     if(matrix_window.layout->canvas_straight){path->point[path->count++]=(FxPoint){xx,yy};return;}
     float bend=fmaxf(40,fabsf(xx-x)*.45f);
     fx_curve_split(path,(FxPoint){x,y},(FxPoint){x+bend,y},(FxPoint){xx-bend,yy},(FxPoint){xx,yy},0);
+}
+/* Bounded UI-only geometry cache shared by paint, click and marquee. Exact
+   keys cover zoom/pan through endpoints, curve style, and drawable density. */
+enum { FX_PATH_CACHE=256 };
+static struct {float ends[4];int width,height,straight,valid;FxCablePath path;} fx_paths[FX_PATH_CACHE];
+static uint64_t fx_path_builds,fx_path_hits;
+static void fx_cable_path(FxCablePath *path,float x,float y,float xx,float yy)
+{
+    float ends[4]={x,y,xx,yy};uint32_t hash=2166136261u;
+    const unsigned char *bytes=(const unsigned char *)ends;
+    for(size_t i=0;i<sizeof(ends);++i)hash=(hash^bytes[i])*16777619u;
+    unsigned index=hash%FX_PATH_CACHE;
+    if(fx_paths[index].valid && !memcmp(ends,fx_paths[index].ends,sizeof(ends)) &&
+       fx_paths[index].width==mx_pixel_w() && fx_paths[index].height==mx_pixel_h() &&
+       fx_paths[index].straight==matrix_window.layout->canvas_straight)++fx_path_hits;
+    else {
+        ++fx_path_builds;fx_cable_path_uncached(&fx_paths[index].path,x,y,xx,yy);
+        memcpy(fx_paths[index].ends,ends,sizeof(ends));fx_paths[index].width=mx_pixel_w();fx_paths[index].height=mx_pixel_h();
+        fx_paths[index].straight=matrix_window.layout->canvas_straight;fx_paths[index].valid=1;
+    }
+    path->count=fx_paths[index].path.count;
+    memcpy(path->point,fx_paths[index].path.point,(size_t)path->count*sizeof(path->point[0]));
 }
 /* Float slab clipping, used by both box selection and the stroke rasterizer. */
 static int fx_clip_segment(FxPoint *a,FxPoint *b,float left,float top,float right,float bottom)
@@ -178,7 +200,7 @@ static float fx_cable(float x,float y,float xx,float yy,uint32_t color,int draw,
         }
         tip=fx_device_point(tip);tangent=fx_device_point(tangent);
         FxPoint from=fx_device_point((FxPoint){x,y}),to=fx_device_point((FxPoint){xx,yy});
-        if(hypotf(to.x-from.x,to.y-from.y)>20*fx_stroke.scale)fx_stroke_arrow(tip,tangent);
+        if(matrix_window.layout->canvas_zoom>=.45f && hypotf(to.x-from.x,to.y-from.y)>20*fx_stroke.scale)fx_stroke_arrow(tip,tangent);
         fx_stroke_end(color);
     }
     return distance;
@@ -193,7 +215,7 @@ static struct {
     size_t count,used,capacity;
     uint32_t *pixels;
     SDL_Rect area;
-    int width,height,straight,valid,changed,direct;
+    int width,height,straight,detail,valid,changed,direct;
     uint32_t background,grid;
     float scale;
 } fx_cable_cache;
@@ -215,12 +237,13 @@ static void fx_cables_begin(void)
         fx_cable_cache.area.x!=area.x || fx_cable_cache.area.y!=area.y ||
         fx_cable_cache.area.w!=area.w || fx_cable_cache.area.h!=area.h ||
         fx_cable_cache.straight!=matrix_window.layout->canvas_straight ||
+        fx_cable_cache.detail!=(matrix_window.layout->canvas_zoom>=.45f) ||
         fx_cable_cache.scale!=fx_stroke.scale ||
         fx_cable_cache.background!=FX_BG || fx_cable_cache.grid!=FX_EDGE;
 }
 static void fx_cables_draw_command(FxCableCommand c)
 {
-    if(!c.control){fx_cable(c.x,c.y,c.xx,c.yy,c.color,1,0,0);return;}
+    if(!c.control || matrix_window.layout->canvas_zoom<.45f){fx_cable(c.x,c.y,c.xx,c.yy,c.color,1,0,0);return;}
     if(!fx_stroke.coverage)return;
     FxCablePath path;fx_cable_path(&path,c.x,c.y,c.xx,c.yy);float distance=0,unit=6*fx_stroke.scale;
     fx_stroke_begin();
@@ -251,6 +274,8 @@ static void fx_cables_add_kind(float x,float y,float xx,float yy,uint32_t color,
         }
         fx_cable_cache.commands=commands;fx_cable_cache.capacity=capacity;
     }
+    if(fx_canvas.bundles)for(size_t j=0;j<fx_cable_cache.used;++j)
+        if(!memcmp(&command,&fx_cable_cache.commands[j],sizeof(command)))return;
     size_t i=fx_cable_cache.used++;
     if(i>=fx_cable_cache.count || memcmp(&command,&fx_cable_cache.commands[i],sizeof(command)))fx_cable_cache.changed=1;
     fx_cable_cache.commands[i]=command;
@@ -272,6 +297,7 @@ static void fx_cables_end(void)
             free(fx_cable_cache.pixels);fx_cable_cache.pixels=pixels;
         }
         fx_cable_cache.area=area;fx_cable_cache.width=mx_pixel_w();fx_cable_cache.height=mx_pixel_h();
+        fx_cable_cache.detail=matrix_window.layout->canvas_zoom>=.45f;
         fx_cable_cache.straight=matrix_window.layout->canvas_straight;fx_cable_cache.scale=fx_stroke.scale;
         fx_cable_cache.background=FX_BG;fx_cable_cache.grid=FX_EDGE;
         fx_cable_cache.valid=1;

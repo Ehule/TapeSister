@@ -63,7 +63,7 @@ static void key(SDL_Keycode sym,int mod)
 {SDL_Event e;SDL_zero(e);e.type=SDL_KEYDOWN;e.key.windowID=fx_canvas.properties?fx_properties_window.id:matrix_window.visible?matrix_window.id:SDL_GetWindowID(main_window);e.key.keysym.sym=sym;e.key.keysym.mod=mod;assert(event(&e));}
 static void context_action(int action)
 {
-    assert(fx_canvas.popup==FX_CONTEXT_MENU);FxContextItem items[16];int count=fx_context_items(items),at=-1;
+    assert(fx_canvas.popup==FX_CONTEXT_MENU);FxContextItem items[FX_CONTEXT_CAPACITY];int count=fx_context_items(items),at=-1;
     for(int i=0;i<count;++i)if(items[i].action==action){assert(items[i].enabled);at=i;break;}
     assert(at>=0);click(fx_canvas.popup_x+40,fx_canvas.popup_y+32+at*FX_CONTEXT_ROW+14,1);
 }
