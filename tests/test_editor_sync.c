@@ -6,6 +6,7 @@
 #include "../src/main_sdl.c"
 #undef main
 #include <assert.h>
+#include "tapesister/audio_assets.h"
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
@@ -154,7 +155,7 @@ static void eq_window_behavior(void)
     assert(SDL_GetWindowFlags(eq_editor.window)&SDL_WINDOW_RESIZABLE);
     SDL_SetWindowSize(eq_editor.window,800,500);eq_editor_paint(0,&audio,&ui);
     SDL_Event level={0};level.type=SDL_MOUSEBUTTONDOWN;level.button.windowID=eq_editor.id;level.button.button=SDL_BUTTON_LEFT;
-    level.button.x=419*800/640;level.button.y=350*500/400;
+    level.button.x=(419*800+639)/640;level.button.y=350*500/400;
     assert(eq_editor_event(&level,main_window,0,&audio,&ui,&sister,&pages,&bank));
     assert(ui.config.master_output_percent==50 && fabsf(ui.master_output.gain-.5f)<.01f);
     level.type=SDL_MOUSEBUTTONUP;assert(eq_editor_event(&level,main_window,0,&audio,&ui,&sister,&pages,&bank));

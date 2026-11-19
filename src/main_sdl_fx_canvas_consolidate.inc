@@ -93,7 +93,8 @@ static const char *fx_consolidate_plan(MatrixSnapshot *s,const int *slots,int co
         } else {
             TsSisterFxSlotControls *slot=&rack->board.slot[i];
             slot->type=(TsSisterFxType)type;slot->enabled=old->enabled;slot->parameter_a=old->a;slot->parameter_b=old->b;slot->parameter_c=old->c;
-            slot->eq=old->eq;slot->mix=old->mix;slot->gain_db=old->gain_db;slot->filter=old->filter;slot->transient_power=old->transient_power;
+            if(type==TS_SISTER_FX_EQ)slot->eq=old->eq;
+            slot->mix=old->mix;slot->gain_db=old->gain_db;slot->filter=old->filter;slot->transient_power=old->transient_power;
             if(type==TS_SISTER_FX_AUTOPAN)slot->autopan=old->autopan;slot->transient_states=old->transient_states;slot->sunvox=old->sunvox;
         }
     }
