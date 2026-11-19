@@ -11,8 +11,10 @@
 #ifdef _WIN32
 #include <direct.h>
 #define TEST_MKDIR(path) _mkdir(path)
+#define TEST_CHDIR(path) _chdir(path)
 #else
 #define TEST_MKDIR(path) mkdir(path,0700)
+#define TEST_CHDIR(path) chdir(path)
 #endif
 static AudioState audio;
 static TsUiState ui;
@@ -133,6 +135,11 @@ static void shared_cards(void)
     SDL_Event f2={0};f2.type=SDL_KEYDOWN;f2.key.keysym.sym=SDLK_F2;
     assert(mosaic_context_event(&f2,0,&audio,&ui,&bank,&controller,0,0));assert(fx_canvas.properties);
     fx_properties_close();
+    SDL_Event menu={0};menu.type=SDL_MOUSEBUTTONDOWN;menu.button.button=SDL_BUTTON_RIGHT;
+    assert(mosaic_context_event(&menu,0,&audio,&ui,&bank,&controller,170,67) && ui.mosaic_context_open);
+    menu.button.button=SDL_BUTTON_LEFT;
+    assert(mosaic_context_event(&menu,0,&audio,&ui,&bank,&controller,ui.mosaic_context_x+10,ui.mosaic_context_y+10));
+    assert(fx_canvas.properties && !ui.mosaic_context_open);fx_properties_close();
     /* Same local event ID in another movement must not inherit the edit. */
     assert(ts_sample_pages_enable_gallery(&pages,error,sizeof(error)));
     TsMosaicGallery *gallery=pages.gallery;assert(ts_gallery_add(gallery,error,sizeof(error)));
@@ -187,6 +194,9 @@ static void eq_window_behavior(void)
 int main(void)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
+    /* Asset writes are transactional; each repeated test needs a fresh root. */
+    char work[128];snprintf(work,sizeof(work),"editor-sync-%llu",(unsigned long long)SDL_GetPerformanceCounter());
+    assert(!TEST_MKDIR(work) && !TEST_CHDIR(work));
     eq_roundtrip_and_audio();ts_ui_init(&ui);ts_instrument_init(&bank);assert(ts_sample_pages_init(&pages,error,sizeof(error)));
     ts_sister_runtime_init(&audio.sister);audio.output_rate=48000;audio.output_device_channels=2;
     pages.mosaic=ts_mosaic_create();assert(pages.mosaic);ui.mosaic=pages.mosaic;ui.mosaic_open=1;ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.parameters=audio.sister.parameters;

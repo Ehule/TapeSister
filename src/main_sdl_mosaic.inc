@@ -495,9 +495,9 @@ static void mosaic_properties_open(AudioState *audio,TsUiState *ui,MosaicControl
 static int mosaic_context_event(const SDL_Event *event,SDL_AudioDeviceID device,AudioState *audio,
     TsUiState *ui,TsInstrument *bank,MosaicController *c,int x,int y)
 {
-    if(!ui->mosaic_open || c->active || c->drag || ui_dialog_open(ui) || ui->master_eq_open || ui->router_open)return 0;
+    if(!ui->mosaic_open || c->active || c->drag || ui->mosaic_grab || ts_ui_foreground_panel_open(ui) || ui_dialog_open(ui) || ui->master_eq_open || ui->router_open)return 0;
     int key=event->type==SDL_KEYDOWN,down=event->type==SDL_MOUSEBUTTONDOWN;
-    if(key && event->key.keysym.sym==SDLK_F2){mosaic_properties_open(audio,ui,c,bank);return 1;}
+    if(key && !ui->mosaic_source_keys && event->key.keysym.sym==SDLK_F2){ui->mosaic_context_open=0;mosaic_properties_open(audio,ui,c,bank);return 1;}
     if(ui->mosaic_context_open) {
         if(key && event->key.keysym.sym==SDLK_ESCAPE){ui->mosaic_context_open=0;return 1;}
         if(down) {
@@ -541,6 +541,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
        event->window.event==SDL_WINDOWEVENT_FOCUS_LOST || event->window.event==SDL_WINDOWEVENT_HIDDEN ||
        event->window.event==SDL_WINDOWEVENT_MINIMIZED)) {
         c->hover_valid=0;ui->mosaic_hover_event=0;ui->mosaic_source_hover[0]=0;
+        if(event->window.event!=SDL_WINDOWEVENT_LEAVE)ui->mosaic_context_open=0;
     }
     if(!ui->mosaic)return 0;
     if(audio->sister.clock_controls.source!=TS_CLOCK_TRACKER_SOURCE || ui->mosaic_grid_quarter<=0)
@@ -567,7 +568,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     if(event->type==SDL_MOUSEWHEEL){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
-    if(mosaic_context_event(event,device,audio,ui,instrument,c,x,y))return 1;
+    if(ui->mosaic_context_open && mosaic_context_event(event,device,audio,ui,instrument,c,x,y))return 1;
     if(mosaic_grid_event(event,ui,c,x,y))return 1;
     if(mosaic_grab_event(event,window,device,ui,c,x,y,mod))return 1;
     if(mosaic_video_event(event,device,audio,ui,instrument,c,x,y))return 1;
@@ -716,6 +717,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(mosaic_arrange_event(event,window,device,ui,instrument,c,x,y,mod))return 1;
     if(mosaic_volume_event(event,device,ui,c,x,y))return 1;
     if(mosaic_controls_event(event,window,device,ui,c,x,y,mod))return 1;
+    /* Handles, video settings and in-progress gestures own their right-clicks. */
+    if(mosaic_context_event(event,device,audio,ui,instrument,c,x,y))return 1;
     if(down && event->button.button==SDL_BUTTON_LEFT &&
        x>=TS_MOSAIC_TIME_X && x<TS_MOSAIC_TIME_X+TS_MOSAIC_TIME_W &&
        y>=TS_MOSAIC_TIME_Y && y<TS_MOSAIC_TIME_Y+TS_MOSAIC_TIME_H) {

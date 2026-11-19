@@ -18,7 +18,9 @@ the caller. Insert curves never modify Master EQ. A removed/replaced processor
 cannot redirect an open editor to a different slot.
 
 Mosaic cards own their names and colors. F2 or right-click > Name / Color opens
-the same editor from either canvas. Existing projects keep Mosaic's name and
+the same editor from either canvas. Mosaic audio/pattern card bodies open the
+menu; handles keep their reset gestures and video cards keep video settings.
+F2 edits video names/colors too (outside QWERTY source-play mode). Existing projects keep Mosaic's name and
 automatic source color, overriding old independent FX Canvas aliases/colors.
 Custom colors are stored in Mosaic formats 24 (WAV) and 25 (shared assets);
 projects without custom colors retain their previous format. Source cards in
