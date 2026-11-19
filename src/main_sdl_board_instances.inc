@@ -286,6 +286,7 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
                 changed=1;
             }break;}
         case TS_SISTER_UI_ACTION_SUNVOX_EDIT:open_sunvox=row;break;
+        case TS_SISTER_UI_ACTION_AUTOPAN_EDIT:autopan_open(audio,s->board_id?2:0,s->board_id,fx->slot[row].id,0);break;
         case TS_SISTER_UI_ACTION_FILTER_EDIT:
             if(s->board_id){character_filter_matrix_open(s->board_id);character_filter_window.source=2;character_filter_window.slot=row;character_filter_window.child=fx->slot[row].id;}
             else character_filter_open(s,row);

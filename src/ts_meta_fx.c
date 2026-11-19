@@ -17,6 +17,7 @@ const char *ts_meta_parameter_name(int type, int field) {
                                      {"CUT", "RES", "DRIVE"},
                                      {"FREQ", "Q", "SPREAD"},
                                      {"ROOT", "DECAY", "DAMP"}};
+    if(type==TS_SISTER_FX_AUTOPAN && field>=0 && field<3)return (const char *[]){"RATE","DEPTH","CENTER"}[field];
     if (field == 3)
         return "MIX";
     if (field == 4)
@@ -65,6 +66,8 @@ void ts_meta_stage_default(TsMetaStage *s, int type) {
     }
     if (type == TS_SISTER_FX_RESONATOR)
         s->value[0] = .25f;
+    ts_autopan_settings_default(&s->autopan);
+    if(type==TS_SISTER_FX_AUTOPAN){s->value[0]=ts_autopan_default_rate();s->value[1]=1;}
     TsCharacterFilterControls filter;
     ts_character_filter_default(&filter);
     memcpy(s->filter, filter.value, sizeof(s->filter));
@@ -112,9 +115,10 @@ int ts_meta_valid(const TsMetaControls *c) {
     }
     for (int i = 0; i < TS_META_STAGES; ++i) {
         const TsMetaStage *s = &c->stage[i];
-        if (s->type < 0 || s->type >= TS_SISTER_FX_SUNVOX || s->enabled < 0 || s->enabled > 1 ||
+        if (s->type < 0 || (s->type >= TS_SISTER_FX_SUNVOX && s->type!=TS_SISTER_FX_AUTOPAN) || s->enabled < 0 || s->enabled > 1 ||
             s->power > 3)
             return 0;
+        if(s->type==TS_SISTER_FX_AUTOPAN && !ts_autopan_settings_valid(&s->autopan))return 0;
         for (int j = 0; j < 5; ++j)
             if (!isfinite(s->value[j]) || s->value[j] < 0 || s->value[j] > 1)
                 return 0;
@@ -268,7 +272,7 @@ void ts_meta_from_board(TsMetaControls *c, const TsSisterFxControls *b, int firs
         v->value[2] = s->parameter_c;
         v->value[3] = s->mix;
         v->value[4] = (s->gain_db + 12) / 24;
-        v->power = s->transient_power;
+        v->power = s->transient_power;if(s->type==TS_SISTER_FX_AUTOPAN)v->autopan=s->autopan;
         if (s->filter.initialized)
             memcpy(v->filter, s->filter.value, sizeof(v->filter));
     }
@@ -277,7 +281,7 @@ struct TsMetaEngine {
     TsMetaControls controls;
     TsSisterSingleFx *child[TS_META_STAGES];
     float macro[TS_META_MACROS], gate[TS_META_STAGES];
-    unsigned clock, step;
+    unsigned clock, step;double quarter;uint32_t transport_serial;
     float smooth, gate_smooth;
 };
 static void refresh(TsMetaEngine *e, int cold) {
@@ -305,7 +309,7 @@ static void refresh(TsMetaEngine *e, int cold) {
                                     .parameter_b = stage.value[1],
                                     .parameter_c = stage.value[2],
                                     .transient_power = stage.power};
-        ts_character_filter_default(&c.filter);
+        c.autopan=stage.autopan;ts_character_filter_default(&c.filter);
         memcpy(c.filter.value, stage.filter, sizeof(stage.filter));
         ts_sister_single_fx_set(e->child[i], &c);
     }
@@ -333,6 +337,8 @@ TsMetaEngine *ts_meta_new(const TsMetaControls *c, unsigned rate, uint32_t seed)
     refresh(e, 1);
     return e;
 }
+void ts_meta_transport(TsMetaEngine *e,double quarter,uint32_t serial)
+{if(e){e->quarter=quarter;e->transport_serial=serial;}}
 void ts_meta_free(TsMetaEngine *e) {
     if (!e)
         return;
@@ -359,6 +365,7 @@ TsStereoFrame ts_meta_process(TsMetaEngine *e, TsStereoFrame in) {
             e->gate[i] += (e->controls.stage[i].enabled - e->gate[i]) * e->gate_smooth;
             if (fabsf(e->gate[i] - e->controls.stage[i].enabled) < 1e-6f)
                 e->gate[i] = e->controls.stage[i].enabled;
+            ts_sister_single_fx_transport(e->child[i],e->quarter,e->transport_serial);
             in = ts_sister_single_fx_process(e->child[i], in, e->gate[i]);
         }
     return ts_stereo_frame_sanitize(in);
@@ -394,6 +401,7 @@ int ts_meta_write(FILE *f, const char *p, const TsMetaControls *c) {
                 return 0;
         if (fputc('\n', f) == EOF)
             return 0;
+        if(s->type==TS_SISTER_FX_AUTOPAN){char key[96];snprintf(key,sizeof(key),"%s.AutoPan%d",p,i);if(!ts_autopan_write(f,key,&s->autopan))return 0;}
     }
     for (int i = 0; i < c->map_count; ++i) {
         const TsMetaMap *m = &c->map[i];
@@ -457,8 +465,9 @@ int ts_meta_read(TsMetaControls *c, const char *key, const char *value) {
         c->scene[1][i] = v[2];
         return 1;
     }
+    if(sscanf(key,"AutoPan%d%n",&i,&n)==1 && !key[n] && i>=0 && i<8)return ts_autopan_read(&c->stage[i].autopan,value)?1:-1;
     if (sscanf(key, "Stage%d%n", &i, &n) == 1 && !key[n] && i >= 0 && i < 8) {
-        if (!numbers(value, v, 8 + TS_CF_COUNT) || !whole(v[0], 0, TS_SISTER_FX_SUNVOX - 1) ||
+        if (!numbers(value, v, 8 + TS_CF_COUNT) || (!whole(v[0], 0, TS_SISTER_FX_SUNVOX - 1) && v[0]!=TS_SISTER_FX_AUTOPAN) ||
             !whole(v[1], 0, 1) || !whole(v[2], 0, 3))
             return -1;
         for (int j = 3; j < 8 + TS_CF_COUNT; ++j)

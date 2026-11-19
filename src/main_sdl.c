@@ -902,6 +902,7 @@ typedef struct {
     int output_rate;
     unsigned output_device_channels;
     int engine_stopped,engine_was_stopped;
+    unsigned autopan_players;
     unsigned engine_ramp;
     float engine_last[TS_AUDIO_CHANNEL_CAPACITY];
     TsStereoFrame engine_last_stereo;
@@ -1286,6 +1287,13 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     /* Transport starts can also arrive through MIDI, automation and editors.
        An explicit engine stop always clears playing under the same exclusion. */
     if(audio->engine_stopped && audio->mosaic && audio->mosaic->playing)audio->engine_stopped=0;
+    /* Observe starts from every player, including direct editor/MIDI starts.
+       A new player resets free or synchronized AutoPan only when requested. */
+    unsigned autopan_players=audio->engine_stopped?0u:
+        ((audio->mosaic && audio->mosaic->playing?1u:0u)|
+         (ts_tapehead_running()?2u:0u)|(ts_keyboard_sequence_active(&audio->keyboard_sequence)?4u:0u));
+    if(autopan_players & ~audio->autopan_players)++audio->sister.master_clock.reset_serial;
+    audio->autopan_players=autopan_players;
     if(audio->engine_stopped) {
         if(audio->sister.insert.duplex)audio->sister.insert.duplex_position=(unsigned)frames;
         else {
@@ -9506,6 +9514,7 @@ typedef struct {
     SDL_Thread *performance_writer;
 } SisterWindow;
 static void character_filter_open(SisterWindow *,int);
+static void autopan_open(AudioState *,int,uint32_t,uint32_t,int);
 static int sister_stage_fx(SDL_AudioDeviceID device,AudioState *audio,TsSisterFxControls *c,TsSisterSunVoxPlan *plan)
 {
     ts_sister_fx_controls_sanitize(c);
@@ -11368,6 +11377,8 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
     int adding = slot->type == TS_SISTER_FX_EMPTY && type != TS_SISTER_FX_EMPTY;
     slot->type = type;
     switch (type) {
+    case TS_SISTER_FX_AUTOPAN:
+        ts_autopan_settings_default(&slot->autopan);slot->parameter_a=ts_autopan_default_rate();slot->parameter_b=1;slot->parameter_c=.5f;break;
     case TS_SISTER_FX_SUNVOX:
         ts_sunvox_default(&slot->sunvox);break;
     case TS_SISTER_FX_DISPERSION:
@@ -11497,6 +11508,7 @@ static void sister_apply_action(SDL_AudioDeviceID device, AudioState *audio,
         ts_session_log_event("sister_action","action=%d index=%d value=%.6f target=%s (request)",hit.action,hit.index,hit.normalized,target);
     }
     if(hit.action==TS_SISTER_UI_ACTION_FX_SLOT_TYPE || hit.action==TS_SISTER_UI_ACTION_FX_SLOT_MOVE)character_filter_hide();
+    if(hit.action==TS_SISTER_UI_ACTION_AUTOPAN_EDIT){autopan_open(audio,sister->board_id?2:0,sister->board_id,sister->model.parameters.fx.slot[hit.index].id,0);return;}
     if(hit.action==TS_SISTER_UI_ACTION_FILTER_EDIT){character_filter_open(sister,hit.index);return;}
     if (sister_pedalboard_action(device,audio,ui,sister,hit)) return;
     if(audio->sister.matrix.controls.enabled && hit.action>=TS_SISTER_UI_ACTION_SOURCE_TILES &&
@@ -12400,6 +12412,7 @@ static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_matrix.inc"
 #include "main_sdl_project_save_overlay.inc"
 #include "main_sdl_character_filter.inc"
+#include "main_sdl_autopan.inc"
 #include "main_sdl_meta_fx.inc"
 #include "main_sdl_modulation.inc"
 #include "main_sdl_board_instances.inc"
@@ -15178,6 +15191,7 @@ int main(int argc, char **argv)
             if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(gallery_windows_event(&event,device,&audio,&ui,&instrument,&mosaic))continue;
             if(modulation_event(&event,device,&audio,&ui,&sample_pages,&instrument))continue;
+            if(autopan_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
             if(source_route_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -19199,6 +19213,7 @@ int main(int argc, char **argv)
         speakers_update(device,&audio,&ui);
         canvas_eq_poll(device,&audio,&ui,&instrument);
         character_filter_paint(&audio,&ui,&sister_window);
+        autopan_paint(&ui,&sister_window);
         meta_fx_paint(&ui);
         gallery_windows_paint(&ui);
         modulation_paint(device,&audio,&ui);
@@ -19351,7 +19366,7 @@ int main(int argc, char **argv)
     }
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
-    character_filter_close();
+    character_filter_close();autopan_close();
     meta_fx_close();
     gallery_windows_close();
     modulation_close();

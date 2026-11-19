@@ -84,6 +84,7 @@ static void mosaic_poll(SDL_AudioDeviceID device,TsUiState *ui,
 static void mosaic_transport(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,int stop)
 {
     if(device)SDL_LockAudioDevice(device);
+    if(stop==1)++audio->sister.master_clock.reset_serial;
     if(audio->gallery && audio->gallery->player.running) {
         TsMosaicGallery *g=audio->gallery;
         if(stop){ts_gallery_sequence_stop(g);if(stop==1)ts_mosaic_seek(ts_gallery_active(g),g->player.start);}

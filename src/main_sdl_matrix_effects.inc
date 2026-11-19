@@ -48,6 +48,7 @@ static void mx_effect_label(char *s,size_t n,const TsMatrixEffectControls *c,int
         snprintf(s,n,k==1?"%s %.1f:1":k==2 || k==3?"%s %.1f MS":"%s %+.1f DB",cn[k],v[k]);
     } else if(c->type==TS_MATRIX_FX_MODULATOR && k<3)snprintf(s,n,k==2?"AUDIO KEY %.0f%%":k==0?"KEY ATTACK %.1f MS":"KEY RELEASE %.1f MS",k==2?c->modulation.audio_amount*100:(k==0?1:10)*powf(1000,k==0?c->a:c->b));
     else if(k==4)snprintf(s,n,"OUTPUT %+.1f DB",c->gain_db);
+    else if(c->type==TS_MATRIX_FX_AUTOPAN && k<3)ts_autopan_label(s,n,k,mx_effect_value(c,position));
     else if(c->type==TS_SISTER_FX_TRANSIENT && k<2)snprintf(s,n,"%s %+.1f DB",names[c->type][k],((k?c->b:c->a)-.5f)*(k?48:30)*(1+c->transient_power));
     else if(c->type==TS_SISTER_FX_TRANSIENT && k==2)snprintf(s,n,"RESPONSE %.2fX",.25f*powf(16,c->c));
     else snprintf(s,n,"%s %.0f%%",names[c->type][k],mx_effect_value(c,position)*100);
@@ -84,6 +85,7 @@ static void mx_effect_paint(void)
     else if(c->type==TS_MATRIX_FX_PEDALBOARD)mx_button(410,696,200,"OPEN PEDALBOARD",0);
     else if(c->type==TS_MATRIX_FX_MODULATOR)mx_button(410,696,200,"EDIT MODULATION",0);
     else if(c->type==TS_MATRIX_FX_SUNVOX)mx_button(410,696,200,"BROWSE SUNVOX",0);
+    else if(c->type==TS_MATRIX_FX_AUTOPAN)mx_button(410,696,200,"EDIT AUTO PAN",0);
     else if(c->type==TS_MATRIX_FX_FILTER)mx_button(410,696,200,"EDIT FILTER",0);
     else mx_text(418,704,"INDEPENDENT INSTANCE",MX_DIM,1);
     mx_button(898,696,138,"REMOVE",0);if(w->canvas){mx_button(1048,696,110,"REPLACE",0);mx_button(1166,696,74,"BACK",0);}
@@ -206,6 +208,7 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         if(c->type==TS_MATRIX_FX_SUNVOX && x>=410 && x<610){svfx_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_META && x>=410 && x<610){meta_fx_open(c->id);return;}
         if(c->type==TS_MATRIX_FX_MODULATOR && x>=410 && x<610){modulation_open(c->id);return;}
+        if(c->type==TS_MATRIX_FX_AUTOPAN && x>=410 && x<610){autopan_open(audio,1,c->id,0,0);return;}
         if(c->type==TS_MATRIX_FX_FILTER && x>=410 && x<610){character_filter_matrix_open(c->id);return;}
         if(x>=272 && x<398){c->enabled=!c->enabled;change=1;}
         if(c->type==TS_MATRIX_FX_COMPRESSOR && x>=410 && x<610){c->compressor.external=!c->compressor.external;if(c->compressor.external)mx_reveal_column(TS_MATRIX_EFFECT_SC_BASE+slot);change=1;}

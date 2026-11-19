@@ -7,7 +7,7 @@ enum { FX_INSPECT_MAX=1024 };
 #define FX_INSPECT_ACTION (FX_BOTTOM-38)
 static TsUiRect fx_inspector_replace_rect(void)
 {return ts_ui_control_rect(fx_inspector_x()+(fx_inspector_width()<202?0:98),FX_TOP+62+(fx_inspector_width()<202?34:0),"REPLACE",2,0);}
-enum { FX_CONTROL_EFFECT, FX_CONTROL_MACRO, FX_CONTROL_SUNVOX, FX_CONTROL_FILTER,
+enum { FX_CONTROL_AUTOPAN,FX_CONTROL_EFFECT, FX_CONTROL_MACRO, FX_CONTROL_SUNVOX, FX_CONTROL_FILTER,
     FX_CONTROL_POWER, FX_CONTROL_EXTERNAL, FX_CONTROL_EQ, FX_CONTROL_EQ_SOLO,
     FX_CONTROL_LIMITER, FX_CONTROL_COMPRESSOR, FX_CONTROL_PARAMETER,
     FX_CONTROL_INTEGER, FX_CONTROL_BYTE, FX_CONTROL_HEADROOM, FX_CONTROL_BOARD_MODE };
@@ -82,6 +82,9 @@ static int fx_inspector_build(void)
                 snprintf(label,sizeof(label),"%s %.0f%%",c->meta.label[i],v*100);
                 fx_control(FX_CONTROL_MACRO,slot,i,v,defaults.meta.macro[i],0,label);
             }
+        } else if(c->type==TS_MATRIX_FX_AUTOPAN) {
+            for(int i=3;i<TS_AP_COUNT;++i){ts_autopan_label(label,sizeof(label),i,c->autopan.value[i-3]);
+                fx_control(FX_CONTROL_AUTOPAN,slot,i,c->autopan.value[i-3],defaults.autopan.value[i-3],ts_autopan_steps(i),label);}
         } else if(c->type==TS_MATRIX_FX_FILTER) {
             for(int i=0;i<TS_CF_COUNT;++i) {
                 ts_character_filter_label(&c->filter,i,label,sizeof(label));
@@ -232,6 +235,7 @@ static void fx_inspector_set(const FxInspectorControl *control,float value,int r
         if(kind==FX_CONTROL_EFFECT)mx_effect_value_set(c,k,v);
         else if(kind==FX_CONTROL_MACRO)ts_meta_macro_set(&c->meta,k,v);
         else if(kind==FX_CONTROL_SUNVOX)c->sunvox.value[k]=reset?-1:(int)lroundf(v*32768);
+        else if(kind==FX_CONTROL_AUTOPAN)c->autopan.value[k-3]=v;
         else if(kind==FX_CONTROL_FILTER)ts_character_filter_set(&c->filter,k,v);
         else if(kind==FX_CONTROL_POWER)c->transient_power=(uint8_t)lroundf(v*3);
         else if(kind==FX_CONTROL_EXTERNAL)c->compressor.external=v>=.5f;

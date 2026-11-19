@@ -20,7 +20,7 @@ add_library(tapesister_core src/ts_mandala.c src/ts_routing_matrix.c src/ts_matr
              src/ts_mosaic.c src/ts_pattern_card.c src/ts_note_event.c src/ts_midi_map.c src/ts_performance.c src/ts_audio_mixer.c
              src/ts_audio_lifecycle.c src/ts_performance_input.c
              src/ts_realtime_diagnostics.c src/ts_profile.c
-             src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c
+             src/ts_sister_effects.c src/ts_sister_fallout.c src/ts_sister_post_fx.c src/ts_autopan.c
              src/ts_sister_limiter.c src/ts_compressor.c src/ts_transient.c src/ts_texture_fx.c src/ts_meta_fx.c src/ts_character_filter.c src/ts_master_eq.c src/ts_eq_spectrum.c src/ts_router.c src/ts_router_performance.c src/ts_insert.c
              src/ts_sister_machine.c src/ts_dark_matter.c src/ts_sister_wave_snapshot.c
              src/ts_sister_runtime.c src/ts_sister_ui.c
@@ -892,6 +892,9 @@ add_test(NAME tapesister_router_tests COMMAND tapesister_router_tests)
 add_executable(tapesister_insert_tests tests/test_insert.c)
 target_link_libraries(tapesister_insert_tests PRIVATE tapesister_core)
 add_test(NAME tapesister_insert_tests COMMAND tapesister_insert_tests)
+add_executable(tapesister_autopan_tests tests/test_autopan.c)
+target_link_libraries(tapesister_autopan_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_autopan_tests COMMAND tapesister_autopan_tests)
 
 # These DSP/core/project fixtures keep multiple instruments/runtimes alive
 # while processing or calling the real Save/Open path. Match the application's

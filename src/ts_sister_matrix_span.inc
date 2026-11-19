@@ -61,6 +61,8 @@ void ts_sister_runtime_matrix_span(TsSisterRuntime *r,const TsSisterSourceFrames
     uint64_t p=ts_profile_begin(TS_PROF_ROUTER);
     ts_matrix_effects_begin_frame(&r->matrix_effects);
     r->matrix_effects.mod_quarter=r->clock_controls.enabled && r->clock_controls.source==TS_CLOCK_TRACKER_SOURCE && r->master_clock.quarter_seconds>0?r->master_clock.quarter_seconds:60.0/r->clock_controls.bpm;
+    r->matrix_effects.transport_serial=r->master_clock.reset_serial;
+    r->post_fx.timing.quarter=r->matrix_effects.mod_quarter;r->post_fx.timing.transport_serial=r->master_clock.reset_serial;
     ts_matrix_modulation_begin(&r->matrix_effects);
     ts_matrix_process_span(&r->matrix,scratch,frames,runtime_matrix_node_span,&context);
     ts_matrix_modulation_end(&r->matrix_effects,frames);

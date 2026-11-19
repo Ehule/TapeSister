@@ -547,13 +547,13 @@ static void test_declick_attack_reaches_capture(void)
 
 static void test_capture_feedback_rendering(void)
 {
-    TsInstrument instrument;
-    TsUiState ui;
-    TsFramebuffer idle;
-    TsFramebuffer recording;
-    TsFramebuffer staged;
-    TsFramebuffer bank_idle;
-    TsFramebuffer bank_armed;
+    static TsInstrument instrument;
+    static TsUiState ui;
+    static TsFramebuffer idle;
+    static TsFramebuffer recording;
+    static TsFramebuffer staged;
+    static TsFramebuffer bank_idle;
+    static TsFramebuffer bank_armed;
     char error[160];
     CHECK(prepare_source_and_blank(&instrument, 16, 12, error, sizeof(error)));
     ts_ui_init(&ui);

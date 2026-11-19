@@ -5786,7 +5786,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 "4-HEAD TAPE" : slot->type == TS_SISTER_FX_DISTORTION ?
                 "RAT / 2X" : slot->type == TS_SISTER_FX_GRAIN ?
                 "24 VOICES" : slot->type == TS_SISTER_FX_TRANSIENT ?
-                "STEREO ENVELOPE" : slot->type==TS_SISTER_FX_DISPERSION?"8 ALL-PASS STAGES":slot->type==TS_SISTER_FX_RESONATOR?"6 TUNED COMBS":"NO PROCESSOR";
+                "STEREO ENVELOPE" : slot->type==TS_SISTER_FX_DISPERSION?"8 ALL-PASS STAGES":slot->type==TS_SISTER_FX_RESONATOR?"6 TUNED COMBS":slot->type==TS_SISTER_FX_AUTOPAN?"STEREO MOTION":"NO PROCESSOR";
             rect(fb, 10, top, 610, TS_SISTER_UI_FX_ROW_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
             snprintf(number, sizeof(number), "%d", row + 1);
             button(fb, 16, top + 2, 40, number, slot->enabled);
@@ -5803,6 +5803,11 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                         if(ts_sunvox_parameter(&slot->sunvox,k,&p))snprintf(label,sizeof(label),"%.6s %.0F",p.name,value*100);
                         else snprintf(label,sizeof(label),"--");
                         sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,label,value,color,ts_sister_ui_parameter_locked(model,parameter+k+1));}
+                    sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
+                } else if(slot->type==TS_SISTER_FX_AUTOPAN) {
+                    for(int k=0;k<3;++k){float v=k==0?slot->parameter_a:k==1?slot->parameter_b:slot->parameter_c;char label[48];
+                        if(k==0)snprintf(label,sizeof(label),"HZ %.2F",.01f*powf(10000,v));else snprintf(label,sizeof(label),k==1?"DEP %.0F%%":"PAN %+.0F",k==1?v*100:(v*2-1)*100);
+                        sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,label,v,color,ts_sister_ui_parameter_locked(model,parameter+k+1));}
                     sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
                 } else if(slot->type==TS_SISTER_FX_FILTER) {
                     const TsCharacterFilterControls *c=&slot->filter;
@@ -5888,6 +5893,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             if(slot->type==TS_SISTER_FX_TRANSIENT) {
                 char power[16];snprintf(power,sizeof(power),"PWR %uX",1u+slot->transient_power);
                 button(fb,320,top+26,66,power,slot->transient_power!=0);
+            } else if(slot->type==TS_SISTER_FX_AUTOPAN) {
+                sister_compact_button(fb,330,top+26,80,"EDIT PAN",0);
             } else if(slot->type==TS_SISTER_FX_SUNVOX) {
                 sister_compact_button(fb,330,top+26,80,"EDIT SUNVOX",0);
                 char name[30];snprintf(name,sizeof(name),"%.29s",ts_sunvox_name(&slot->sunvox));text(fb,420,top+31,name,PAL_WAVE_RIGHT,1);

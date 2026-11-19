@@ -7,7 +7,7 @@
 #include "tapesister/pedalboard.h"
 #include "tapesister/modulation.h"
 
-enum { TS_MATRIX_FX_COMPRESSOR=6, TS_MATRIX_FX_FILTER=7, TS_MATRIX_FX_DISPERSION=8, TS_MATRIX_FX_RESONATOR=9, TS_MATRIX_FX_META=10, TS_MATRIX_FX_SUNVOX=11, TS_MATRIX_FX_PEDALBOARD=12, TS_MATRIX_FX_MODULATOR=13, TS_MATRIX_FX_TYPES=14 };
+enum { TS_MATRIX_FX_COMPRESSOR=6, TS_MATRIX_FX_FILTER=7, TS_MATRIX_FX_DISPERSION=8, TS_MATRIX_FX_RESONATOR=9, TS_MATRIX_FX_META=10, TS_MATRIX_FX_SUNVOX=11, TS_MATRIX_FX_PEDALBOARD=12, TS_MATRIX_FX_MODULATOR=13, TS_MATRIX_FX_AUTOPAN=14, TS_MATRIX_FX_TYPES=15 };
 typedef struct {
     uint32_t id; /* Never reused within the project; zero means unused port. */
     int type,enabled;
@@ -20,6 +20,7 @@ typedef struct {
     TsSunVoxControls sunvox;
     TsPedalboardControls board;
     TsModControls modulation;
+    TsAutoPanSettings autopan;
 } TsMatrixEffectControls;
 void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id);
 int ts_matrix_effect_valid(const TsMatrixEffectControls *c);

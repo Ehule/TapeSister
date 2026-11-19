@@ -26,12 +26,12 @@ struct TsMatrixEffectNode {
    IDs survive project saves; this process-local generation must not. */
 static atomic_uint_least64_t profile_generation;
 static TsSisterFxType pedal_type(int type)
-{return type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:(TsSisterFxType)type;}
+{return type==TS_MATRIX_FX_AUTOPAN?TS_SISTER_FX_AUTOPAN:type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:(TsSisterFxType)type;}
 const char *ts_matrix_effect_name(int type)
 {return type==TS_MATRIX_FX_MODULATOR?"MODULATOR":type==TS_MATRIX_FX_PEDALBOARD?"PEDALBOARD":type==TS_MATRIX_FX_SUNVOX?"SUNVOX FX":type==TS_MATRIX_FX_META?"META FX":type==TS_MATRIX_FX_COMPRESSOR?"COMPRESSOR":ts_sister_fx_type_name(pedal_type(type));}
 const char *ts_matrix_effect_short_name(int type)
 {
-    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX","BOARD","MOD"};
+    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX","BOARD","MOD","PAN"};
     return type>=0 && type<TS_MATRIX_FX_TYPES?names[type]:"FX";
 }
 void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
@@ -49,6 +49,7 @@ void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
         c->a=.25f;c->b=.4f;c->c=0;ts_mod_default(&c->modulation);
         for(unsigned i=0;i<c->modulation.count;++i)c->modulation.lane[i].seed^=id*UINT32_C(0x85ebca6b);
     }
+    if(type==TS_MATRIX_FX_AUTOPAN){c->a=ts_autopan_default_rate();c->b=1;c->c=.5f;ts_autopan_settings_default(&c->autopan);}
     if(type==TS_MATRIX_FX_RESONATOR)c->a=.25f;
     ts_character_filter_default(&c->filter);
     ts_compressor_default(&c->compressor);c->compressor.enabled=1;
@@ -62,6 +63,7 @@ int ts_matrix_effect_valid(const TsMatrixEffectControls *c)
         isfinite(c->gain_db) && c->gain_db>=-12 && c->gain_db<=12 &&
         isfinite(c->transition) && c->transition>=0 && c->transition<=1 && ts_compressor_valid(&c->compressor) &&
         ts_transient_states_valid(c->transient_power,&c->transient_states) &&
+        (c->type!=TS_MATRIX_FX_AUTOPAN || ts_autopan_settings_valid(&c->autopan)) &&
         (c->type!=TS_MATRIX_FX_FILTER || ts_character_filter_valid(&c->filter)) &&
         (c->type!=TS_MATRIX_FX_META || ts_meta_valid(&c->meta)) &&
         (c->type!=TS_MATRIX_FX_PEDALBOARD || ts_pedalboard_valid(&c->board)) &&
@@ -92,7 +94,7 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
         }
     } else {
         TsSisterFxSlotControls slot={pedal_type(c->type),1,TS_SISTER_FX_PLACE_POST,c->gain_db,c->a,c->b,c->c,c->mix,0};
-        slot.filter=c->filter;slot.transient_power=c->transient_power;slot.transient_states=c->transient_states;
+        slot.autopan=c->autopan;slot.filter=c->filter;slot.transient_power=c->transient_power;slot.transient_states=c->transient_states;
         ts_sister_single_fx_set(n->pedal,&slot);
     }
 }
@@ -263,9 +265,17 @@ void ts_matrix_effects_tick(TsMatrixEffects *f)
         if(!n)f->fading&=~(1u<<i);
     }
 }
+static void node_transport(TsMatrixEffects *f,TsMatrixEffectNode *n)
+{
+    if(!n)return;
+    if(n->pedal)ts_sister_single_fx_transport(n->pedal,f->mod_quarter,f->transport_serial);
+    if(n->board)ts_pedalboard_transport(n->board,f->mod_quarter,f->transport_serial);
+    if(n->meta)ts_meta_transport(n->meta,f->mod_quarter,f->transport_serial);
+}
 static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode *n,TsStereoFrame in,TsStereoFrame key,int connected,int transitioning)
 {
     if(!n)return (TsStereoFrame){0,0};
+    node_transport(f,n);
     if(n->type==TS_MATRIX_FX_MODULATOR){TsMatrixModulation *m=n->mod;
         if(m && m->authored.modulation.audio_amount>0){float peak=fminf(1,fmaxf(fabsf(key.l),fabsf(key.r)));if(!isfinite(peak))peak=0;
             m->envelope+=(peak-m->envelope)*(peak>m->envelope?m->attack:m->release);if(m->envelope<1e-20f)m->envelope=0;}
@@ -349,7 +359,7 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
     /* Lifecycle fades use the chronological path. A SunVox job may become
        ready only at the last frame; all jobs drain in graph order afterward,
        preserving SDK-global random state and the existing worker policy. */
-    TsMatrixEffectNode *n=f->current[i];
+    TsMatrixEffectNode *n=f->current[i];node_transport(f,n);
     if(effect_asleep(f,i)){memset(out,0,frames*sizeof(*out));return;}
     if(frames)f->rendered|=1u<<i;
     if(f->activity[i]<1 || (f->suspended&(1u<<i))) {

@@ -2709,8 +2709,9 @@ int main(void)
     remove("test-roundtrip.wav");
 
     {
-        TsConfig config;
-        TsConfig reopened;
+        /* Keep the main fixture plus nested config loaders within desktop stack limits. */
+        static TsConfig config;
+        static TsConfig reopened;
         ts_config_init(&config);
         CHECK(config.rotate_wheel_fine == 5);
         CHECK(config.rotate_wheel_coarse == 50);
@@ -2871,7 +2872,7 @@ int main(void)
             remove("test-tapesister.ini");
         }
         {
-            TsUiState startup_ui;
+            static TsUiState startup_ui;
             ts_ui_init(&startup_ui);
             startup_ui.startup_welcome_installed = 1;
             startup_ui.startup_welcome_autoplay = 1;

@@ -104,13 +104,13 @@ static void graph(void)
 }
 static void persistence(void)
 {
-    TsConfig a,b;char error[160];ts_config_init(&a);
+    static TsConfig a,b;char error[160];ts_config_init(&a);
     a.compressor=(TsCompressorControls){1,1,-31,7,3,680,-2};
     a.matrix.row[TS_MATRIX_PRISM].matrix_gain[TS_MATRIX_SIDECHAIN]=350;
     assert(ts_config_save(&a,"compressor-config.ini",error,sizeof(error)));
     assert(ts_config_load(&b,"compressor-config.ini",error,sizeof(error)));
     assert(!memcmp(&a.compressor,&b.compressor,sizeof(a.compressor)) && !memcmp(&a.matrix,&b.matrix,sizeof(a.matrix)));
-    TsSisterProjectState s,t;ts_sister_project_state_init(&s,48000);s.compressor=a.compressor;s.matrix=a.matrix;
+    static TsSisterProjectState s,t;ts_sister_project_state_init(&s,48000);s.compressor=a.compressor;s.matrix=a.matrix;
     assert(ts_sister_project_state_save_file(&s,"compressor-project.ini",error,sizeof(error)));int present=0;
     assert(ts_sister_project_state_load_file(&t,"compressor-project.ini",48000,&present,error,sizeof(error)) && present);
     assert(!memcmp(&s.compressor,&t.compressor,sizeof(s.compressor)));

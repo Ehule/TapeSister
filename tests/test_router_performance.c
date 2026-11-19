@@ -138,14 +138,14 @@ static void persistence(void)
 {
     char error[200];TsRouter r;bank(&r);r.performance.step[63]=(TsRouterStep){25,3600};ts_router_store(&r,25);
     r.performance.timer_seconds[4]=16;r.performance.timer_after[4]=1;
-    TsConfig config,loaded;ts_config_init(&config);config.router_performance=r.performance;config.router=r.controls;
+    static TsConfig config,loaded;ts_config_init(&config);config.router_performance=r.performance;config.router=r.controls;
     assert(ts_config_save(&config,"test-router-perf.ini",error,sizeof(error)));
     assert(ts_config_load(&loaded,"test-router-perf.ini",error,sizeof(error)));
     assert(!memcmp(&config.router_performance,&loaded.router_performance,sizeof(r.performance)));
     /* Keep the large runtime fixture off the default Windows test stack. */
     static TsSisterRuntime runtime;ts_sister_runtime_init(&runtime);ts_sister_runtime_set_router(&runtime,&r.controls);
     ts_router_performance_set(&runtime.router,&r.performance);ts_router_timer_start(&runtime.router,0,TS_ROUTER_TIMER_SOLO);
-    TsSisterProjectState state,read;ts_sister_project_state_capture(&state,&runtime,1,NULL);
+    static TsSisterProjectState state,read;ts_sister_project_state_capture(&state,&runtime,1,NULL);
     assert(state.router.solo==0); /* Temporary solo must never become permanent on save. */
     assert(ts_sister_project_state_save_file(&state,"test-router-perf-project.ini",error,sizeof(error)));
     int present=0;assert(ts_sister_project_state_load_file(&read,"test-router-perf-project.ini",48000,&present,error,sizeof(error)) && present);

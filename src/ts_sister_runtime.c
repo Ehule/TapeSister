@@ -1460,6 +1460,8 @@ TsSisterRuntimeFrame ts_sister_runtime_process_frame(
     float route_energy = 0.0f;
     frame.dry_monitor_gain = 1.0f;
     if (runtime == NULL) return frame;
+    runtime->post_fx.timing.quarter=runtime->clock_controls.enabled && runtime->clock_controls.source==TS_CLOCK_TRACKER_SOURCE && runtime->master_clock.quarter_seconds>0?runtime->master_clock.quarter_seconds:runtime->clock_controls.bpm?60.0/runtime->clock_controls.bpm:.5;
+    runtime->post_fx.timing.transport_serial=runtime->master_clock.reset_serial;
     ts_matrix_effects_tick(&runtime->matrix_effects);
     TsStereoFrame tiles = ts_stereo_frame_sanitize_inline(sources->tiles);
     TsStereoFrame fm = ts_stereo_frame_sanitize_inline(sources->fm);
