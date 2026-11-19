@@ -94,7 +94,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     int64_t w=right-x,h=bottom-y,bx=mosaic_detail_pixel(sx),by=mosaic_detail_pixel(sy);
     if(bx<1)bx=1;
     if(by<1)by=1;
-    uint32_t color=e->live?RGB(245,184,91):mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
+    uint32_t color=ts_ui_mosaic_card_color(&ui->palette,e),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_EDGE, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     MosaicCardStyle style=mosaic_card_style(ui,e,w/sx,h/sy,selected);
     int hovered=e->id==ui->mosaic_hover_event;

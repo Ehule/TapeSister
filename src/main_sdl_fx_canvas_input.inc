@@ -1,3 +1,22 @@
+static int fx_source_toggle(SDL_AudioDeviceID device,TsUiState *ui,int solo,int related)
+{
+    MatrixWindow *w=&matrix_window;int count=0,all=1;
+    if(device)SDL_LockAudioDevice(device);
+    for(int pass=0;pass<2;++pass)for(int c=0;c<mx_scene_count();++c) {
+        TsMosaic *m=mx_scene_at(c);if(!m)continue;int checkpoint=0;
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i){TsMosaicEvent *e=&m->events[i];if(!e->id || (solo && e->source->video_path[0]))continue;
+            int chosen=0;for(int j=0;j<w->selection_count;++j){MatrixRow r=w->selection[j];
+                TsMosaicEvent *selected=r.kind==3?mx_card(r):NULL;
+                if(selected && mx_card_scene(r)==m && (selected==e || (related && selected->source==e->source)))chosen=1;}
+            if(!chosen)continue;
+            if(!pass){++count;all&=solo?e->solo:e->muted;}
+            else {if(!checkpoint++){ts_mosaic_checkpoint(m);}if(solo)e->solo=!all;else e->muted=!all;++m->revision;}
+        }
+    }
+    if(device)SDL_UnlockAudioDevice(device);
+    if(count){ui->project_modified=1;w->dirty=1;snprintf(w->status,sizeof(w->status),"%d SOURCE CARDS: %s %s",count,solo?"SOLO":"MUTE",all?"OFF":"ON");}
+    return count;
+}
 /* Canvas gestures use their own drag range; parameter editors already use 10..40. */
 static int fx_canvas_key(SDL_Keycode key)
 {return key==SDLK_t || key==SDLK_F2 || key==SDLK_ESCAPE || key==SDLK_BACKQUOTE || key==SDLK_DELETE || key==SDLK_BACKSPACE || key==SDLK_HOME || key==SDLK_z || key==SDLK_m || key==SDLK_g || key==SDLK_s || key==SDLK_x;}
@@ -128,7 +147,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         }
         if(fx_canvas.popup)return 1;
         if((key==SDLK_HOME || key==SDLK_z) && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))){if(!fx_canvas.meta){fx_build(pages,bank);fx_fit_selection(key==SDLK_z && !(mod&KMOD_SHIFT));}return 1;}
-        if(key==SDLK_m){if(mx_editable())fx_bypass_selection(device,audio,ui);return 1;}
+        if((key==SDLK_m && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI))) || (key==SDLK_s && (mod&KMOD_ALT) && !(mod&(KMOD_CTRL|KMOD_GUI)))) {
+            if(mx_editable() && !fx_source_toggle(device,ui,key==SDLK_s,(mod&KMOD_SHIFT)!=0) && key==SDLK_m)fx_bypass_selection(device,audio,ui);return 1;
+        }
         if(!fx_canvas.meta && !(mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) && (key==SDLK_g || key==SDLK_s)) {
             fx_build(pages,bank);fx_begin_transform(key==SDLK_g?FX_DRAG_GRAB:FX_DRAG_SCALE);return 1;
         }
@@ -274,6 +295,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         if(mod&KMOD_CTRL)fx_select(n,1);else if(!fx_chosen(n->row))fx_select(n,0);
         w->effect_open=n->row.kind==4?(uint32_t)n->row.tile:0;w->effect_menu=0;
         w->compressor_open=n->row.kind==2 && n->row.index==TS_MATRIX_COMPRESSOR;
+        if(e->button.clicks>=2 && n->row.kind==2 && n->row.index==TS_MATRIX_EQ){eq_editor_open(device,audio,ui,-1,0,0,e->button.windowID);return 1;}
         if(e->button.clicks>=2 && n->row.kind==2 && n->row.index==TS_MATRIX_BOARD){sister_board_open_from(0,e->button.windowID);return 1;}
         if(e->button.clicks>=2 && n->row.kind==4) {
             TsMatrixEffectControls *c=&w->controls.effect[ts_matrix_effect_index(n->row.index)];
@@ -281,6 +303,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(c->type==TS_MATRIX_FX_MODULATOR){modulation_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_SUNVOX){svfx_open(c->id);return 1;}
             if(c->type==TS_MATRIX_FX_META){fx_canvas.meta=c->id;w->effect_open=0;return 1;}
+            if(c->type==TS_MATRIX_FX_EQ){eq_editor_open(device,audio,ui,1,c->id,0,e->button.windowID);return 1;}
             if(c->type==TS_MATRIX_FX_AUTOPAN){autopan_open(audio,1,c->id,0,0);return 1;}
             if(c->type==TS_MATRIX_FX_FILTER){character_filter_matrix_open(c->id);return 1;}}
         if(fx_chosen(n->row)) {fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;fx_begin_transform(FX_DRAG_NODE);}

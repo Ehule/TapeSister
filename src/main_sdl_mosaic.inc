@@ -482,6 +482,54 @@ static void mosaic_keyboard_select(SDL_AudioDeviceID device,AudioState *a,TsUiSt
 #include "main_sdl_mosaic_gallery.inc"
 #include "main_sdl_mosaic_video.inc"
 
+static void mosaic_properties_open(AudioState *audio,TsUiState *ui,MosaicController *c,TsInstrument *bank)
+{
+    if(!c->pages)return;
+    mx_bind_mosaic(ui,c->pages);matrix_window.layout=&audio->sister.matrix_layout;matrix_window.palette=ui->palette;
+    matrix_window.controls=audio->sister.matrix.controls;mx_rows(c->pages,bank);matrix_window.selection_count=0;
+    for(int i=0;i<matrix_window.count;++i){MatrixRow row=matrix_window.rows[i];
+        if(row.kind==3 && mx_card_scene(row)==ui->mosaic && mosaic_chosen(ui,row.index))
+            matrix_window.selection[matrix_window.selection_count++]=row;}
+    if(matrix_window.selection_count)fx_properties_begin(matrix_window.selection[0]);
+}
+static int mosaic_context_event(const SDL_Event *event,SDL_AudioDeviceID device,AudioState *audio,
+    TsUiState *ui,TsInstrument *bank,MosaicController *c,int x,int y)
+{
+    if(!ui->mosaic_open || c->active || c->drag || ui_dialog_open(ui) || ui->master_eq_open || ui->router_open)return 0;
+    int key=event->type==SDL_KEYDOWN,down=event->type==SDL_MOUSEBUTTONDOWN;
+    if(key && event->key.keysym.sym==SDLK_F2){mosaic_properties_open(audio,ui,c,bank);return 1;}
+    if(ui->mosaic_context_open) {
+        if(key && event->key.keysym.sym==SDLK_ESCAPE){ui->mosaic_context_open=0;return 1;}
+        if(down) {
+            int item=x>=ui->mosaic_context_x && x<ui->mosaic_context_x+180 && y>=ui->mosaic_context_y && y<ui->mosaic_context_y+124?(y-ui->mosaic_context_y-2)/24:-1;
+            ui->mosaic_context_open=0;
+            if(event->button.button!=SDL_BUTTON_LEFT)return 1;
+            if(item==0)mosaic_properties_open(audio,ui,c,bank);
+            if(item>=1 && item<=3){
+                if(device)SDL_LockAudioDevice(device);
+                int all=1;for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i) && !(item==2 && ui->mosaic->events[i].source->video_path[0]))all&=item==1?ui->mosaic->events[i].muted:ui->mosaic->events[i].solo;
+                ts_mosaic_checkpoint(ui->mosaic);
+                for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(mosaic_chosen(ui,i)){
+                    TsMosaicEvent *e=&ui->mosaic->events[i];
+                    if(item==1)e->muted=!all;
+                    else if(item==2){if(!e->source->video_path[0])e->solo=!all;}
+                    else ts_mosaic_delete(ui->mosaic,e->id);
+                }
+                ++ui->mosaic->revision;if(item==3)mosaic_select_only(ui,0);
+                if(device)SDL_UnlockAudioDevice(device);ui->project_modified=1;
+            }return 1;
+        }
+        return event->type!=SDL_KEYUP && event->type!=SDL_WINDOWEVENT;
+    }
+    if(down && event->button.button==SDL_BUTTON_RIGHT && !(SDL_GetModState()&(KMOD_CTRL|KMOD_ALT|KMOD_SHIFT)) &&
+       x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
+        TsMosaicEvent *e=mosaic_card_at(ui,x,y);if(!e)return 0;
+        if(!mosaic_chosen(ui,(int)(e-ui->mosaic->events)))mosaic_select_only(ui,e->id);
+        ui->mosaic_context_x=SDL_clamp(x,151,TS_UI_WIDTH-184);
+        ui->mosaic_context_y=SDL_clamp(y,66,TS_MOSAIC_CANVAS_BOTTOM-128);ui->mosaic_context_open=1;return 1;
+    }
+    return 0;
+}
 static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDeviceID device,
     AudioState *audio,TsUiState *ui,TsInstrument *instrument,MosaicController *c,
     PortalController *portal,SisterWindow *sister,TransformController *transform,int rate)
@@ -519,6 +567,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     if(event->type==SDL_MOUSEWHEEL){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
+    if(mosaic_context_event(event,device,audio,ui,instrument,c,x,y))return 1;
     if(mosaic_grid_event(event,ui,c,x,y))return 1;
     if(mosaic_grab_event(event,window,device,ui,c,x,y,mod))return 1;
     if(mosaic_video_event(event,device,audio,ui,instrument,c,x,y))return 1;

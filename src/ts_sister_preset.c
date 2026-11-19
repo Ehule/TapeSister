@@ -349,6 +349,7 @@ static int write_parameters(FILE *file, const TsSisterParameters *p)
         if (fprintf(file, "slot%d_locks=%u\n", index + 1, (unsigned)slot->parameter_locks) < 0) return 0;
         char transient_key[40];snprintf(transient_key,sizeof(transient_key),"slot%d_transient",index+1);
         if(!ts_transient_states_write(file,transient_key,slot->transient_power,&slot->transient_states))return 0;
+        if(slot->type==TS_SISTER_FX_EQ){snprintf(transient_key,sizeof(transient_key),"slot%d_eq",index+1);if(!ts_eq_curve_write(file,transient_key,&slot->eq))return 0;}
         if(slot->type==TS_SISTER_FX_AUTOPAN){snprintf(transient_key,sizeof(transient_key),"slot%d_autopan",index+1);if(!ts_autopan_write(file,transient_key,&slot->autopan))return 0;}
         if(slot->type==TS_SISTER_FX_FILTER || slot->filter.captured){snprintf(transient_key,sizeof(transient_key),"slot%d_filter",index+1);if(!ts_character_filter_write(file,transient_key,&slot->filter))return 0;}
         const TsGrainStates *bank=&slot->grain_states;
@@ -452,7 +453,8 @@ static int assign_field(TsSisterParameters *p, const char *key,
     if(!strcmp(key,"next_slot_id")){if(!parse_int(value,&integer) || integer<0)return 0;p->fx.next_slot_id=(uint32_t)integer;return 1;}
     if (strcmp(key, "slot_count") == 0) {
         if (!parse_int(value, &integer) || integer < TS_SISTER_FX_SLOT_MIN || integer > TS_SISTER_FX_SLOT_COUNT) return 0;
-        if (integer > p->fx.slot_count) p->fx.slot_count = integer;
+        p->fx.slot_count = integer;
+        for(int i=integer;i<TS_SISTER_FX_SLOT_COUNT;++i)p->fx.slot[i]=ts_sister_fx_empty_slot();
         return 1;
     }
     if (sscanf(key, "slot%d_%31s", &slot_number, slot_field) == 2 &&
@@ -460,6 +462,7 @@ static int assign_field(TsSisterParameters *p, const char *key,
         if (slot_number > p->fx.slot_count) p->fx.slot_count = slot_number;
         TsSisterFxSlotControls *slot = &p->fx.slot[slot_number - 1];
         if(!strcmp(slot_field,"id")){if(!parse_int(value,&integer) || integer<0)return 0;slot->id=(uint32_t)integer;return 1;}
+        if(!strcmp(slot_field,"eq"))return ts_eq_curve_read(&slot->eq,value);
         if(!strcmp(slot_field,"autopan"))return ts_autopan_read(&slot->autopan,value);
         if(!strncmp(slot_field,"sunvox.",7))return ts_sunvox_read(&slot->sunvox,slot_field+7,value)==1;
         if(!strcmp(slot_field,"filter"))return ts_character_filter_read(&slot->filter,value);
@@ -709,7 +712,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
     }
     ts_sister_preset_bank_init(loaded, sample_rate);
     ts_sister_parameters_default(&current, sample_rate);
-    current.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
+    current.fx.slot_count = 5; /* Legacy files had five rows before explicit counts. */
     while (fgets(line, sizeof(line), file) != NULL) {
         char *text = trim(line);
         char *equals;
@@ -738,7 +741,7 @@ int ts_sister_preset_load(TsSisterPresetBank *bank, const char *path,
             in_preset = 1;
             current_name[0] = '\0';
             ts_sister_parameters_default(&current, sample_rate);
-            current.fx.slot_count = TS_SISTER_FX_SLOT_MIN;
+            current.fx.slot_count = 5; /* Legacy files had five rows before explicit counts. */
             current_locks = 0u;
             current_locks_high = 0u;
             continue;

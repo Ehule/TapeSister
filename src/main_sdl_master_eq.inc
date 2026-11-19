@@ -10,9 +10,10 @@ static void master_eq_snapshot(AudioState *audio,TsUiState *ui)
 static void master_eq_commit(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {
     ts_master_eq_sanitize(&ui->config.master_eq);
+    if(effect_eq_handling)return; /* The owning insert publishes after the event. */
     if(device)SDL_LockAudioDevice(device);
     ts_master_eq_set(canvas_eq_handling?&audio->canvas_eq:&audio->sister.master_eq,&ui->config.master_eq);
-    if(!canvas_eq_handling) {
+    if(!canvas_eq_handling && !effect_eq_handling) {
         master_eq_snapshot(audio,ui);
         ts_ui_eq_morph_status(ui,ui->status,sizeof(ui->status));
     }
@@ -69,7 +70,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
                 !ui->fm_full_choice_open && sister_event_mouse(sister->window,event->button.x,event->button.y,&x,&y)) {
             TsSisterUiHit hit=ts_sister_ui_hit_test_model(&sister->model,x,y);
             if(hit.action==TS_SISTER_UI_ACTION_LIMITER_TOGGLE) {
-                master_eq_open(device,audio,ui);application_window_focus(window,sister);return 1;
+                eq_editor_open(device,audio,ui,-1,0,0,id);return 1;
             }
         }
         button=event->button.button;
@@ -80,7 +81,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         if(event->type==SDL_MOUSEBUTTONDOWN && button==SDL_BUTTON_LEFT &&
            ts_ui_master_limiter_contains(x,y) && !ui->midi_learn_active &&
            !ui_blocking_dialog_open_except_fm(ui) && !ui->fm_bank_choice_open && !ui->fm_full_choice_open) {
-            master_eq_open(device,audio,ui);return 1;
+            eq_editor_open(device,audio,ui,-1,0,0,id);return 1;
         }
         return 0;
     }
@@ -117,7 +118,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         int rx,ry;wheel_event_mouse(event,&rx,&ry);logical_mouse(window,rx,ry,&x,&y);
         wheel=wheel_event_delta(event,0);
     } else if(event->type!=SDL_MOUSEBUTTONDOWN)return 0;
-    if(!canvas_eq_handling) {
+    if(!canvas_eq_handling && !effect_eq_handling) {
         if(device)SDL_LockAudioDevice(device);
         master_eq_snapshot(audio,ui);
         if(device)SDL_UnlockAudioDevice(device);
@@ -163,7 +164,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
         }
         return 1;
     }
-    if(!canvas_eq_handling && (ui->master_eq_drag==6 || (y>=220 && y<250))) {
+    if(!canvas_eq_handling && !effect_eq_handling && (ui->master_eq_drag==6 || (y>=220 && y<250))) {
         if(device)SDL_LockAudioDevice(device);
         TsMasterEq *eq=&audio->sister.master_eq;
         int left=event->type==SDL_MOUSEBUTTONDOWN && button==SDL_BUTTON_LEFT;
@@ -257,7 +258,7 @@ static int master_eq_event(const SDL_Event *event,SDL_Window *window,
                     ts_master_eq_set_normalized(b,control,n,rate);changed=1;
                 } else if(button==SDL_BUTTON_LEFT)ui->master_eq_drag=control+1;
             }
-        } else if(y>=337 && y<367) {
+        } else if(!effect_eq_handling && y>=337 && y<367) {
             if(x>=20 && x<124)set_output_limiter_enabled(device,audio,ui,sister,!audio->sister.limiter.enabled);
             else if(x>=328 && x<510)ui->master_eq_drag=5;
         }

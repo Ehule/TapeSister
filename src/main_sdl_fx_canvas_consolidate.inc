@@ -8,7 +8,7 @@ static void fx_consolidate_notice(const char *reason)
 static int fx_consolidate_slot_type(int type)
 {
     if(type>=TS_SISTER_FX_REVERB && type<=TS_SISTER_FX_TRANSIENT)return type;
-    return type==TS_MATRIX_FX_AUTOPAN?TS_SISTER_FX_AUTOPAN:type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:
+    return type==TS_MATRIX_FX_EQ?TS_SISTER_FX_EQ:type==TS_MATRIX_FX_AUTOPAN?TS_SISTER_FX_AUTOPAN:type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:
         type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:type==TS_MATRIX_FX_SUNVOX?TS_SISTER_FX_SUNVOX:0;
 }
 static int fx_consolidate_member(uint64_t id,const uint32_t *ids,int count)
@@ -80,6 +80,7 @@ static const char *fx_consolidate_plan(MatrixSnapshot *s,const int *slots,int co
             error=meta?"Meta FX uses 12 ms stage bypass fades. Use a Pedalboard to retain a different shared fade time.":
                 "The effects have different bypass fade times. A Pedalboard needs one shared fade time.";break;
         }
+        if(meta && type==TS_SISTER_FX_EQ){error="This EQ needs its five-band editor. Choose Pedalboard to preserve the curve.";break;}
         if(meta && type==TS_SISTER_FX_SUNVOX){error="Meta FX cannot hold SunVox effects. Choose Pedalboard in the consolidate popup instead.";break;}
         if(meta && ((type==TS_SISTER_FX_TRANSIENT && old->transient_states.captured) ||
            (type==TS_SISTER_FX_FILTER && (old->filter.captured || old->filter.locks)))) {
@@ -92,7 +93,7 @@ static const char *fx_consolidate_plan(MatrixSnapshot *s,const int *slots,int co
         } else {
             TsSisterFxSlotControls *slot=&rack->board.slot[i];
             slot->type=(TsSisterFxType)type;slot->enabled=old->enabled;slot->parameter_a=old->a;slot->parameter_b=old->b;slot->parameter_c=old->c;
-            slot->mix=old->mix;slot->gain_db=old->gain_db;slot->filter=old->filter;slot->transient_power=old->transient_power;
+            slot->eq=old->eq;slot->mix=old->mix;slot->gain_db=old->gain_db;slot->filter=old->filter;slot->transient_power=old->transient_power;
             if(type==TS_SISTER_FX_AUTOPAN)slot->autopan=old->autopan;slot->transient_states=old->transient_states;slot->sunvox=old->sunvox;
         }
     }

@@ -97,6 +97,9 @@ typedef enum {
     TS_SISTER_UI_ACTION_FX_SCROLL,
     TS_SISTER_UI_ACTION_FX_SCROLL_TRACK,
     TS_SISTER_UI_ACTION_FX_ADD,
+    TS_SISTER_UI_ACTION_FX_ADD_COUNT,
+    TS_SISTER_UI_ACTION_EQ_EDIT,
+    TS_SISTER_UI_ACTION_FX_SLOT_DELETE,
     TS_SISTER_UI_ACTION_FX_REMOVE,
     TS_SISTER_UI_ACTION_FX_REMOVE_CONFIRM,
     TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL,
@@ -296,6 +299,7 @@ typedef enum {
 typedef struct {
     int visible;
     int fx_scroll, fx_remove_confirmation;
+    int fx_add_count; /* UI-only step for the - / + controls; zero means one. */
     int matrix_routing;
     int capture_channels;
     int capture_overdub;

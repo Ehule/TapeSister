@@ -3303,7 +3303,7 @@ void ts_ui_render(TsFramebuffer *fb, const TsUiState *ui, const TsInstrument *in
         master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);if(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING"))project_saving_render(fb,ui);return;
     }
     if(ui->mosaic_open && ui->mosaic) {
-        render_group=TS_THEME_MOSAIC;mosaic_render(fb,ui,instrument);
+        render_group=TS_THEME_MOSAIC;mosaic_render(fb,ui,instrument);mosaic_context_render(fb,ui);
         master_eq_render(fb,ui);router_render(fb,ui);main_midi_learn_overlay(fb,ui);
         /* Every active browser owns the foreground over Mosaic too. */
         render_group=TS_THEME_CANVAS;
@@ -5770,6 +5770,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
         int first = ts_sister_ui_fx_scroll(model);
         for (int visible = 0; visible < TS_SISTER_UI_FX_VISIBLE; ++visible) {
             int row = first + visible;
+            if(row>=model->parameters.fx.slot_count)break;
             const TsSisterFxSlotControls *slot =
                 &model->parameters.fx.slot[row];
             int top = TS_SISTER_UI_FX_TOP + visible * TS_SISTER_UI_FX_ROW_STEP;
@@ -5786,7 +5787,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 "4-HEAD TAPE" : slot->type == TS_SISTER_FX_DISTORTION ?
                 "RAT / 2X" : slot->type == TS_SISTER_FX_GRAIN ?
                 "24 VOICES" : slot->type == TS_SISTER_FX_TRANSIENT ?
-                "STEREO ENVELOPE" : slot->type==TS_SISTER_FX_DISPERSION?"8 ALL-PASS STAGES":slot->type==TS_SISTER_FX_RESONATOR?"6 TUNED COMBS":slot->type==TS_SISTER_FX_AUTOPAN?"STEREO MOTION":"NO PROCESSOR";
+                "STEREO ENVELOPE" : slot->type==TS_SISTER_FX_DISPERSION?"8 ALL-PASS STAGES":slot->type==TS_SISTER_FX_RESONATOR?"6 TUNED COMBS":slot->type==TS_SISTER_FX_AUTOPAN?"STEREO MOTION":slot->type==TS_SISTER_FX_EQ?"FIVE BANDS":"NO PROCESSOR";
             rect(fb, 10, top, 610, TS_SISTER_UI_FX_ROW_H, ts_theme_color(active_palette(), render_group, TS_COLOR_BACKGROUND, RGB(10, 10, 11)));
             snprintf(number, sizeof(number), "%d", row + 1);
             button(fb, 16, top + 2, 40, number, slot->enabled);
@@ -5803,6 +5804,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                         if(ts_sunvox_parameter(&slot->sunvox,k,&p))snprintf(label,sizeof(label),"%.6s %.0F",p.name,value*100);
                         else snprintf(label,sizeof(label),"--");
                         sister_value_parameter_state(fb,156+field_step*(k+1),top+4,field_width,label,value,color,ts_sister_ui_parameter_locked(model,parameter+k+1));}
+                    sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
+                } else if(slot->type==TS_SISTER_FX_EQ) {
+                    text(fb,244,top+10,"FIVE-BAND PARAMETRIC EQ",color,1);
                     sister_percent_parameter_state(fb,156+field_step*4,top+4,field_width,"MIX",slot->mix,100,color,ts_sister_ui_parameter_locked(model,parameter+4));
                 } else if(slot->type==TS_SISTER_FX_AUTOPAN) {
                     for(int k=0;k<3;++k){float v=k==0?slot->parameter_a:k==1?slot->parameter_b:slot->parameter_c;char label[48];
@@ -5893,6 +5897,8 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             if(slot->type==TS_SISTER_FX_TRANSIENT) {
                 char power[16];snprintf(power,sizeof(power),"PWR %uX",1u+slot->transient_power);
                 button(fb,320,top+26,66,power,slot->transient_power!=0);
+            } else if(slot->type==TS_SISTER_FX_EQ) {
+                sister_compact_button(fb,330,top+26,80,"EDIT EQ",1);
             } else if(slot->type==TS_SISTER_FX_AUTOPAN) {
                 sister_compact_button(fb,330,top+26,80,"EDIT PAN",0);
             } else if(slot->type==TS_SISTER_FX_SUNVOX) {
@@ -5923,8 +5929,9 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
                 rect(fb,508,top+40,112,3,PAL_DESKTOP);
                 rect(fb,508,top+40,(int)(112*log1pf(bank->seconds*10)/logf(6001.f)),3,PAL_NOTE);
             }
-            if (row > 0) button(fb, 542, top + 4, 36, "UP", 0);
-            if (row + 1 < model->parameters.fx.slot_count) button(fb, 584, top + 4, 36, "DN", 0);
+            button(fb,596,top+4,24,"X",0);
+            if (row > 0) button(fb, 542, top + 4, 24, "UP", 0);
+            if (row + 1 < model->parameters.fx.slot_count) button(fb, 568, top + 4, 24, "DN", 0);
         }
         {
             int thumb_y, thumb_h;
@@ -5937,7 +5944,7 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
             button(fb, TS_SISTER_UI_FX_SCROLL_X, TS_SISTER_UI_FX_SCROLL_BOTTOM, TS_SISTER_UI_FX_SCROLL_W, "v",
                    first+TS_SISTER_UI_FX_VISIBLE < model->parameters.fx.slot_count);
             button(fb,10,332,28,"-",model->parameters.fx.slot_count>TS_SISTER_FX_SLOT_MIN);
-            char count[8]; snprintf(count,sizeof(count),"%d",model->parameters.fx.slot_count);
+            char count[8]; snprintf(count,sizeof(count),"%d",model->fx_add_count>0?model->fx_add_count:1);
             text(fb,46,337,count,PAL_MOUSE,1);
             button(fb,74,332,28,"+",model->parameters.fx.slot_count<TS_SISTER_FX_SLOT_COUNT);
         }
@@ -6332,8 +6339,7 @@ sister_footer:
         char prompt[72];
         rect(fb,100,140,440,106,PAL_DESKTOP);
         rect(fb,100,140,440,1,PAL_MOUSE); rect(fb,100,245,440,1,PAL_MOUSE);
-        snprintf(prompt,sizeof(prompt),"REMOVE SLOT %d (%s)?",model->parameters.fx.slot_count,
-                 ts_sister_fx_type_name(model->parameters.fx.slot[model->parameters.fx.slot_count-1].type));
+        snprintf(prompt,sizeof(prompt),"REMOVE LAST %d SLOT(S)?",model->fx_remove_confirmation);
         text(fb,120,158,prompt,PAL_TEXT,1);
         text(fb,120,180,"ITS EFFECT AND SETTINGS WILL BE REMOVED.",PAL_MOUSE,1);
         button(fb,164,208,132,"REMOVE",0); button(fb,332,208,132,"CANCEL",1);
@@ -6429,3 +6435,11 @@ sister_footer:
 
 #include "ts_spatial_ui.inc"
 #include "ts_source_route_ui.inc"
+
+void ts_ui_render_eq(TsFramebuffer *fb,const TsUiState *ui)
+{
+    render_palette=&ui->palette;render_group=TS_THEME_EQ;
+    rect(fb,0,0,TS_UI_WIDTH,TS_UI_HEIGHT,PAL_DESKTOP);
+    text(fb,20,16,ui->effect_eq_open?"TAPESISTER / EFFECT EQ":"TAPESISTER / MASTER EQ",PAL_TEXT,1);
+    master_eq_render(fb,ui);text(fb,20,386,ui->status,PAL_TEXT,1);
+}

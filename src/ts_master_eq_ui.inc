@@ -134,12 +134,12 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     float db_scale=ui->canvas_eq_open?4.5f:3.5f;
     int height=bottom-79;
     frame(fb,10,38,620,341,ts_theme_color(active_palette(), TS_THEME_EQ, TS_COLOR_PANEL, RGB(29,27,32)),PAL_BUTTON);
-    text(fb,20,48,ui->canvas_eq_open?(ui->mosaic_editing?"MOSAIC INSTANCE EQ":"CANVAS TILE EQ"):"MASTER / ROOM EQ",amber,1);
+    text(fb,20,48,ui->effect_eq_open?"EFFECT EQ / FIVE BANDS":ui->canvas_eq_open?(ui->mosaic_editing?"MOSAIC INSTANCE EQ":"CANVAS TILE EQ"):"MASTER / ROOM EQ",amber,1);
     if(c->solo_band)snprintf(label,sizeof(label),"SOLO %02d / CTRL-CLICK TO RESTORE",c->solo_band);
     else snprintf(label,sizeof(label),"PRESET: %s",ts_master_eq_preset_name(ts_master_eq_preset_match(c)));
     text(fb,20,62,label,c->solo_band?amber:muted,1);
     button(fb,224,44,78,"PRESETS",ui->master_eq_presets_open);
-    if(!ui->canvas_eq_open)button(fb,312,44,76,ui->master_eq_spectrum_off?"SPEC OFF":"SPEC ON",!ui->master_eq_spectrum_off);
+    if(!ui->canvas_eq_open && !ui->effect_eq_open)button(fb,312,44,76,ui->master_eq_spectrum_off?"SPEC OFF":"SPEC ON",!ui->master_eq_spectrum_off);
     button(fb,396,44,78,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
     button(fb,484,44,96,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
     button(fb,596,44,24,"X",0);
@@ -189,7 +189,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
             snprintf(label,sizeof(label),"%d",db);text(fb,602,y-3,label,teal,1);
         }
     }
-    if(!ui->canvas_eq_open) {
+    if(!ui->canvas_eq_open && !ui->effect_eq_open) {
         const TsEqMorph *m=&ui->config.eq_morph;
         eq_capture_button(fb,ui,0);eq_capture_button(fb,ui,1);
         ts_ui_eq_morph_status(ui,label,sizeof(label));
@@ -244,7 +244,9 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     snprintf(label,sizeof(label),"Q %.2F",b->q);
     slider(fb,428,303,188,label,ts_master_eq_normalized(b,2,rate),teal);
     rect(fb,20,331,600,1,PAL_BUTTON);
-    if(ui->canvas_eq_open) {
+    if(ui->effect_eq_open) {
+        text(fb,20,349,"LIVE EFFECT EQ / CHANGES APPLY IMMEDIATELY / ESC: CLOSE",muted,1);
+    } else if(ui->canvas_eq_open) {
         button(fb,20,341,120,ui->canvas_eq_busy?"RENDERING...":"AUDITION SPACE",0);
         button(fb,392,341,102,"APPLY EQ",0);button(fb,510,341,108,"CANCEL",0);
         text(fb,20,369,"EDITABLE EQ / ORIGINAL AUDIO KEPT / APPLIED BEFORE PLAYBACK PITCH",muted,1);

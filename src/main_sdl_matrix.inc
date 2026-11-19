@@ -1221,7 +1221,12 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->history_skip=0;
     if(edit && !w->pending){snprintf(w->status,sizeof(w->status),"EDIT NOT APPLIED: CANNOT ALLOCATE UNDO SNAPSHOT.");return 1;}
     int original=w->original_active;
+    if(properties && edit){if(device)SDL_LockAudioDevice(device);
+        for(int c=0;c<mx_scene_count();++c){TsMosaic *m=mx_scene_at(c);int found=0;
+            for(int i=0;i<fx_canvas.properties_count;++i)found|=fx_canvas.properties_rows[i].kind==3 && mx_card_scene(fx_canvas.properties_rows[i])==m;
+            if(found)ts_mosaic_checkpoint(m);}}
     int result=properties?fx_properties_event(e):matrix_event_inner(e,main,device,audio,ui,pages,bank);
+    if(properties && edit && device)SDL_UnlockAudioDevice(device);
     if(w->pending && (!w->drag || (e->type==SDL_MOUSEBUTTONUP && !fx_modal()))) {
         MatrixSnapshot *after=mx_snapshot(device,audio,pages,bank);
         if(!after && !w->history_skip) {
