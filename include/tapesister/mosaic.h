@@ -88,6 +88,7 @@ typedef struct TsMosaicSource {
 typedef struct {
     uint64_t id, revision;
     char name[64];
+    uint32_t color; /* Zero follows the Mosaic source palette. Shared by both canvases. */
     TsMosaicSource *source;
     double start, duration, x, width;
     size_t first, last, crossfade;

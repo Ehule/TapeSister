@@ -544,6 +544,8 @@ typedef struct {
     TsUiMasterOutputStatus master_output;
     int master_output_dragging;
     TsMasterEqControls canvas_eq;int canvas_eq_open,canvas_eq_busy;
+    int mosaic_context_open,mosaic_context_x,mosaic_context_y;
+    int effect_eq_open;
     int master_eq_open, master_eq_band, master_eq_drag, master_eq_reset_pending;
     unsigned master_eq_rate;
     int master_eq_presets_open, master_eq_spectrum_off;
@@ -1038,6 +1040,8 @@ size_t ts_ui_right_drag_playhead_frame(size_t anchor, size_t pointer,
 int ts_ui_keyboard_set_octave(TsUiState *ui, int octave);
 int ts_ui_keyboard_cycle_octave(TsUiState *ui, int amount);
 int ts_ui_keyboard_shift_semitone(TsUiState *ui, int amount);
+uint32_t ts_ui_mosaic_card_color(const TsPalette *,const TsMosaicEvent *);
+void ts_ui_render_eq(TsFramebuffer *,const TsUiState *);
 int ts_ui_master_eq_node(const TsUiState *ui,int x,int y);
 int ts_ui_master_eq_visible(const TsUiState *ui);
 typedef enum { TS_EQ_CAPTURE_EMPTY, TS_EQ_CAPTURE_READY, TS_EQ_CAPTURE_EDITING, TS_EQ_CAPTURE_CHANGED } TsEqCaptureVisual;

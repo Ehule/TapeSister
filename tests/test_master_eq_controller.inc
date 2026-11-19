@@ -143,8 +143,9 @@ static void test_master_eq_controller(void)
     reset_route(0);ts_sister_runtime_disable(&audio.sister);
     int lim=audio.sister.limiter.enabled;
     assert(eq_click(TS_UI_MASTER_LIMITER_X+5,10,SDL_BUTTON_LEFT));
-    assert(ui.master_eq_open);
+    assert(eq_editor.visible && !ui.master_eq_open);
     assert(audio.sister.limiter.enabled==lim);
+    eq_editor_hide();master_eq_open(device,&audio,&ui); /* Exercise the shared curve controls below. */
     eq_preset_controls();
     eq_morph_controller();
     eq_click(412,55,SDL_BUTTON_LEFT);assert(audio.sister.master_eq.controls.enabled);

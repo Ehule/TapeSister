@@ -8,7 +8,7 @@ static struct {
     FxCanvasNode node[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];
     int label_selected,label_editing,label_target,label_cursor,label_all;
     Uint32 text_blink;int text_phase,confirm_delete;uint32_t replace_id;
-    int properties,properties_count;MatrixRow properties_rows[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];FxWireList properties_wires;MatrixRow properties_row;char properties_name[48];uint32_t properties_color;int properties_cursor,properties_all;
+    int properties,properties_count;MatrixRow properties_rows[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];FxWireList properties_wires;MatrixRow properties_row;char properties_name[64];uint32_t properties_color;int properties_cursor,properties_all;
     char label_text[TS_FX_LABEL_TEXT];
     TsFxCanvasLabel label_origin,label_move[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT];
     unsigned char labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT],before_labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT],moving_labels[TS_FX_LABEL_LIMIT+TS_FX_HEADING_LIMIT];
@@ -74,16 +74,22 @@ static TsMatrixEffectControls *fx_meta(void)
            matrix_window.controls.effect[i].type==TS_MATRIX_FX_META)return &matrix_window.controls.effect[i];
     fx_canvas.meta=0;return NULL;
 }
+static TsFxCanvasPosition *fx_position_source(TsFxCanvasPosition *p,MatrixRow row)
+{
+    TsMosaicEvent *e=row.kind==3?mx_card(row):NULL;
+    if(e){snprintf(p->name,sizeof(p->name),"%.47s",e->name);p->color=e->color;}
+    return p;
+}
 static TsFxCanvasPosition *fx_position(MatrixRow row,int create)
 {
     TsMatrixLayout *l=matrix_window.layout;int kind=row.kind;uint64_t id=mx_row_id(row);
     if(kind==5)id=(uint64_t)row.index;
-    for(int i=0;i<l->canvas_count;++i)if(l->canvas[i].kind==kind && l->canvas[i].id==id && l->canvas[i].canvas==row.canvas)return &l->canvas[i];
+    for(int i=0;i<l->canvas_count;++i)if(l->canvas[i].kind==kind && l->canvas[i].id==id && l->canvas[i].canvas==row.canvas)return fx_position_source(&l->canvas[i],row);
     /* Adopt legacy unqualified card positions once. Same-numbered cards in
        another movement get their own positions, rather than stealing this one. */
     if(kind==3 && row.canvas)for(int i=0;i<l->canvas_count;++i)
         if(l->canvas[i].kind==kind && l->canvas[i].id==id && !l->canvas[i].canvas) {
-            l->canvas[i].canvas=row.canvas;return &l->canvas[i];
+            l->canvas[i].canvas=row.canvas;return fx_position_source(&l->canvas[i],row);
         }
     if(!create)return NULL;
     if(kind==0 || kind==1 || kind==3) {
@@ -105,7 +111,7 @@ static TsFxCanvasPosition *fx_position(MatrixRow row,int create)
         }
     }
     if(l->canvas_count==TS_FX_CANVAS_POSITIONS)return NULL;
-    TsFxCanvasPosition *p=&l->canvas[l->canvas_count++];memset(p,0,sizeof(*p));p->kind=kind;p->id=id;p->canvas=row.canvas;return p;
+    TsFxCanvasPosition *p=&l->canvas[l->canvas_count++];memset(p,0,sizeof(*p));p->kind=kind;p->id=id;p->canvas=row.canvas;return fx_position_source(p,row);
 }
 /* A newly visible module can enter a column already occupied by a hand-placed
    node. Find an open spot once, then save it with the other world positions. */
@@ -380,11 +386,19 @@ static void fx_ensure_visible(FxCanvasNode *n)
 static uint32_t fx_color(int type)
 {
     static const int roles[]={TS_COLOR_DATA4,TS_COLOR_DATA3,TS_COLOR_DATA1,TS_COLOR_DATA1,
-        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5,TS_COLOR_DATA5,TS_COLOR_DATA3};
+        TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA2};
     static const uint32_t colors[]={0xffc9b3d4u,0xff9ed2b2u,0xffe6c17du,0xffe5b36bu,
-        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u,0xffc9a0e6u,0xffbba8dcu};
+        0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u,0xffc9a0e6u,0xffbba8dcu,0xff6ed7bdu};
     type=SDL_clamp(type,0,TS_MATRIX_FX_TYPES-1);
     return FX_THEME(roles[type],colors[type]);
+}
+static uint32_t fx_source_color(MatrixRow row)
+{
+    TsMosaicEvent *e=row.kind==3?mx_card(row):NULL;
+    if(e)return ts_ui_mosaic_card_color(&matrix_window.palette,e);
+    TsFxCanvasPosition *p=fx_position(row,0);if(p && p->color)return p->color;
+    int slot=row.kind==4?ts_matrix_effect_index(row.index):-1;
+    return fx_color(slot>=0?matrix_window.controls.effect[slot].type:0);
 }
 static int fx_line_height(FxFontMetrics font)
 {return (font.rows[7]*MATRIX_H+mx_pixel_h()-1)/mx_pixel_h()+2;}
@@ -572,6 +586,7 @@ static void fx_inspector_paint(TsSamplePages *pages,TsInstrument *bank)
 }
 static SDL_Rect fx_text_object_rect(int index);
 static void fx_groups_clamp(void);
+static int fx_source_toggle(SDL_AudioDeviceID,TsUiState *,int,int);
 static uint32_t fx_wire_color(MatrixRow source,int destination);
 static int fx_wire_selected(MatrixRow source,int destination);
 static int fx_select_wire(MatrixRow source,int destination,int toggle);
@@ -679,7 +694,10 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             else snprintf(compact,sizeof(compact),"%s",title);
             TsFxCanvasPosition *style=fx_position(n->row,0);
             if(style && style->name[0]){title=style->name;snprintf(compact,sizeof(compact),"%s",title);}
-            uint32_t color=c && !c->enabled?FX_MUTED:style && style->color?style->color:fx_color(c?c->type:0);
+            TsMosaicEvent *source=n->row.kind==3?mx_card(n->row):NULL;
+            if(source){title=source->name;snprintf(compact,sizeof(compact),"%s",title);
+                detail=source->muted?"MUTED / M: TOGGLE":source->solo?"SOLO / ALT+S: TOGGLE":"M: MUTE / ALT+S: SOLO";}
+            uint32_t color=c && !c->enabled?FX_MUTED:fx_source_color(n->row);
             if(fx_canvas.active_view && fx_row_playing(n->row)) {
                 float pulse=.28f+.10f*sinf(SDL_GetTicks()*.0025f);
                 uint32_t green=0xff68d68b,mixed=0xff000000;

@@ -49,7 +49,9 @@ int main(void)
     const char *patch=workers?reverb:amp;size_t patch_size=workers?sizeof(reverb)-1:sizeof(amp)-1;
     FILE *f=fopen("span.sunsynth","wb");assert(f);assert(fwrite(patch,1,patch_size,f)==patch_size);assert(!fclose(f));
     TsSunVoxControls sv;assert(ts_sunvox_import(&sv,"span.sunsynth"));remove("span.sunsynth");
-    TsMatrixControls c;ts_matrix_default(&c);c.enabled=1;c.feedback=1;
+    /* Keep the large routing fixture off MinGW's default 2 MiB thread stack. */
+    static TsMatrixControls c;
+    ts_matrix_default(&c);c.enabled=1;c.feedback=1;
     for(int i=0;i<TS_MATRIX_ROWS;++i)c.row[i]=(TsSourceRoute){.matrix_enabled=1};
     for(int i=0;i<12;++i) {
         int type=i<10?i+1:TS_MATRIX_FX_SUNVOX;

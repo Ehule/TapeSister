@@ -19,7 +19,7 @@ static void fx_wire_style_remove(TsMatrixLayout *l,int at)
     memset(l->cables+l->cable_count,0,sizeof(*l->cables));
 }
 static uint32_t fx_wire_color(MatrixRow row,int destination)
-{int at=fx_wire_style_at(fx_wire_style_key(row,destination));return at<0?0:matrix_window.layout->cables[at].color;}
+{int at=fx_wire_style_at(fx_wire_style_key(row,destination));return at<0?fx_source_color(row):matrix_window.layout->cables[at].color;}
 static void fx_wire_set_color(FxCanvasWire wire,uint32_t color)
 {
     TsMatrixLayout *l=matrix_window.layout;TsFxCableStyle key=fx_wire_style_key(wire.source,wire.destination);

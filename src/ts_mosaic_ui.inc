@@ -14,6 +14,14 @@ static uint32_t mosaic_color(uint64_t id)
 }
 static uint64_t mosaic_source_color(const TsMosaicSource *s)
 {return s->pattern?(s->pattern->lineage*131+s->pattern->id):s->hash;}
+uint32_t ts_ui_mosaic_card_color(const TsPalette *palette,const TsMosaicEvent *e)
+{
+    if(e->color)return e->color;
+    if(e->live)return RGB(245,184,91);
+    uint64_t id=e->source?mosaic_source_color(e->source):0;
+    static const int roles[]={TS_COLOR_DATA2,TS_COLOR_DATA1,TS_COLOR_DATA5,TS_COLOR_DATA4,TS_COLOR_DATA3};
+    return ts_theme_legacy(palette,TS_THEME_MOSAIC,roles[id%5],TS_PALETTE_MOSAIC_TILE_1+id%5);
+}
 static const char *mosaic_live_state_name(const TsUiState *,const TsMosaicEvent *);
 static void mosaic_live_length_label(const TsMosaicEvent *e,char *label,size_t size)
 {snprintf(label,size,"X%.3G %s",e->duration/fmax(.000001,ts_mosaic_live_cycle(e)),e->live_finite?"END":"INF");}
@@ -134,7 +142,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(left+width<=151 || left>=ts_ui_mosaic_canvas_right(ui) || bottom<=66 || top>=TS_MOSAIC_CANVAS_BOTTOM)return;
     int x=(int)left,w=(int)width,y=(int)fmax(66,top),end=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,bottom),h=end-y;
     if(h<1)h=1;
-    uint32_t color=e->live?RGB(245,184,91):mosaic_color(mosaic_source_color(e->source)),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_SELECTION, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
+    uint32_t color=ts_ui_mosaic_card_color(&ui->palette,e),fill=selected?ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_SELECTION, RGB(50,46,59)):ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(32,31,39));
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     if(dim)color=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_MUTED,color);
     if(e->solo)color=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_SOLO,color);
@@ -349,6 +357,14 @@ static void mosaic_volume_lane(TsFramebuffer *fb,const TsUiState *ui,double inte
 
 #include "ts_mosaic_gallery_ui.inc"
 #include "ts_mosaic_video_ui.inc"
+static void mosaic_context_render(TsFramebuffer *fb,const TsUiState *ui)
+{
+    if(!ui->mosaic_context_open)return;
+    int x=ui->mosaic_context_x,y=ui->mosaic_context_y;
+    static const char *items[]={"NAME / COLOR    F2","MUTE            M","SOLO        ALT+S","DELETE","CLOSE MENU"};
+    frame(fb,x,y,180,124,PAL_DESKTOP,PAL_MOUSE);
+    for(int i=0;i<5;++i)text(fb,x+10,y+9+i*24,items[i],PAL_TEXT,1);
+}
 static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrument *instrument)
 {
     const TsMosaic *m=ui->mosaic;

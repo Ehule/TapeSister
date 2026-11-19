@@ -6,7 +6,7 @@ enum { FX_CONTEXT_MENU=3,FX_CONTEXT_W=438,FX_CONTEXT_ROW=22,FX_CONTEXT_CAPACITY=
     FX_CONTEXT_GROUP,FX_CONTEXT_UNGROUP,FX_CONTEXT_NAMES,FX_CONTEXT_TYPES,
     FX_CONTEXT_PROPERTIES,FX_CONTEXT_PALETTE,FX_CONTEXT_COPY,FX_CONTEXT_PASTE,
     FX_CONTEXT_NETWORK,FX_CONTEXT_FOCUS,FX_CONTEXT_BUNDLE,
-    FX_CONTEXT_DELETE,FX_CONTEXT_FIT,FX_CONTEXT_UNDO,FX_CONTEXT_REDO };
+    FX_CONTEXT_MUTE,FX_CONTEXT_SOLO,FX_CONTEXT_DELETE,FX_CONTEXT_FIT,FX_CONTEXT_UNDO,FX_CONTEXT_REDO };
 typedef struct { int action,enabled;const char *name,*shortcut; } FxContextItem;
 static int fx_context_items(FxContextItem items[FX_CONTEXT_CAPACITY])
 {
@@ -35,6 +35,8 @@ static int fx_context_items(FxContextItem items[FX_CONTEXT_CAPACITY])
     ITEM(FX_CONTEXT_TYPES,edit && objects>1,"Arrange by type","Ctrl+Shift+R");
     ITEM(FX_CONTEXT_PROPERTIES,objects || labels || fx_canvas.wires.count || grouped,
         fx_canvas.wires.count?"Cable color...":labels && !objects?"Edit text...":"Name / color...","F2");
+    int sources=0;for(int i=0;i<w->selection_count;++i)sources|=w->selection[i].kind==3;
+    if(sources){ITEM(FX_CONTEXT_MUTE,edit,"Mute source cards","M");ITEM(FX_CONTEXT_SOLO,edit,"Solo source cards","Alt+S");}
     ITEM(FX_CONTEXT_PALETTE,1,"Palette editor...","Ctrl+Alt+P");
     ITEM(FX_CONTEXT_COPY,fx_selected_effects(),"Copy effects","Ctrl+C");
     ITEM(FX_CONTEXT_PASTE,edit && fx_clipboard.count && w->controls.enabled,"Paste effects","Ctrl+V");
@@ -238,6 +240,7 @@ static void fx_context_run(int action,SDL_AudioDeviceID device,AudioState *audio
         else if(w->selection_count)fx_properties_begin(w->selection[0]);
         else if(fx_canvas.label_selected>=0)fx_label_begin(fx_canvas.label_selected);
         break;
+    case FX_CONTEXT_MUTE:case FX_CONTEXT_SOLO:fx_source_toggle(device,ui,action==FX_CONTEXT_SOLO,0);break;
     case FX_CONTEXT_PALETTE:palette_window_show(ui);break;
     case FX_CONTEXT_COPY:fx_copy();break;
     case FX_CONTEXT_PASTE:fx_paste(device,audio,ui,pages,bank);break;

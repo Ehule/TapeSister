@@ -244,6 +244,7 @@ const char *ts_sister_fx_type_name(TsSisterFxType type)
     case TS_SISTER_FX_DISPERSION: return "DISPERSE";
     case TS_SISTER_FX_RESONATOR: return "RESONATOR";
     case TS_SISTER_FX_SUNVOX: return "SUNVOX";
+    case TS_SISTER_FX_EQ: return "EQ";
     case TS_SISTER_FX_AUTOPAN: return "AUTO PAN";
     default: return "EMPTY";
     }
@@ -275,6 +276,7 @@ static TsSisterFxSlotControls slot_controls(
     slot.mix = mix;
     ts_character_filter_default(&slot.filter);
     ts_autopan_settings_default(&slot.autopan);
+    ts_master_eq_default(&slot.eq);slot.eq.enabled=1;
     return slot;
 }
 
@@ -323,7 +325,7 @@ void ts_sister_fx_controls_migrate_legacy(TsSisterFxControls *controls)
         legacy_targets_to_placement(controls->reverb_targets),
         controls->reverb_gain_db, controls->reverb_size,
         controls->reverb_decay, 0.5f, controls->reverb_mix);
-    controls->slot_count = TS_SISTER_FX_SLOT_MIN;
+    controls->slot_count = 5; /* Legacy four-effect board plus its original empty row. */
     for (int i = 4; i < TS_SISTER_FX_SLOT_COUNT; ++i)
         controls->slot[i] = ts_sister_fx_empty_slot();
     for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)controls->slot[i].id=ids[i];
@@ -500,6 +502,7 @@ void ts_sister_fx_controls_sanitize(TsSisterFxControls *controls)
         TsSisterFxSlotControls *slot = &controls->slot[i];
         if ((int)i >= controls->slot_count) *slot = ts_sister_fx_empty_slot();
         slot->parameter_locks &= 31u;
+        if(slot->type==TS_SISTER_FX_EQ && !ts_eq_curve_valid(&slot->eq)){ts_master_eq_default(&slot->eq);slot->eq.enabled=1;}
         if(slot->type==TS_SISTER_FX_AUTOPAN && !ts_autopan_settings_valid(&slot->autopan))ts_autopan_settings_default(&slot->autopan);
         ts_character_filter_sanitize(&slot->filter);
         TsGrainStates *bank=&slot->grain_states;
@@ -960,7 +963,10 @@ void ts_sister_post_fx_set_controls(TsSisterPostFxEngine *engine,
                 used|=(k<next.slot_count && next.slot[k].id==engine->processor_id[j]) ||
                     (v->active.type && v->active.id==engine->processor_id[j]) ||
                     (v->has_pending && v->pending.type && v->pending.id==engine->processor_id[j]);}
-            if(!used){engine->processor_id[j]=next.slot[i].id;break;}
+            if(!used){engine->processor_id[j]=next.slot[i].id;
+                for(int location=0;location<TS_SISTER_FX_LOCATION_COUNT;++location)
+                    ts_effect_eq_init(&engine->eq[j][location],engine->sample_rate);
+                break;}
         }
     }
     {
@@ -1048,6 +1054,7 @@ int ts_sister_post_fx_sync_controls(TsSisterPostFxEngine *engine,
         ramp_reset(&slot_state->engage, control->enabled ? 1.0f : 0.0f);
         for (size_t location = 0u;
              location < TS_SISTER_FX_LOCATION_COUNT; ++location) {
+            ts_effect_eq_init(&engine->eq[slot][location],engine->sample_rate);
             ts_autopan_init(&engine->autopan[slot][location],engine->sample_rate,control->id+(uint32_t)location*0x9e3779b9u);
             TsSisterReverbState *reverb = &engine->reverb[slot][location];
             TsSisterDelayState *delay = &engine->delay[slot][location];
@@ -1712,6 +1719,12 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
         engine->resonator[slot][location].mix = 0;
     }
     switch (control->type) {
+    case TS_SISTER_FX_EQ: {
+        TsEffectEq *q=&engine->eq[slot][location];
+        if(q->dsp.sample_rate!=engine->timing.sample_rate)ts_effect_eq_init(q,engine->timing.sample_rate);
+        if(dry_insertion)q->mix=0;
+        return ts_effect_eq_process(q,&control->eq,input,control->mix,control->gain_db,gate,direct);
+    }
     case TS_SISTER_FX_AUTOPAN: {
         TsAutoPan *p=&engine->autopan[slot][location];
         if(!p->sample_rate)ts_autopan_init(p,engine->timing.sample_rate,control->id+(uint32_t)location*0x9e3779b9u);
@@ -1805,7 +1818,7 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         }
         direct *= slot_direct;
         if(measured){const TsSisterFxSlotControls *v=&state->active;
-            TsProfileEffectIdentity id={.generation=engine->profile_generation,.id=v->id,.type=v->type==TS_SISTER_FX_AUTOPAN?TS_MATRIX_FX_AUTOPAN:v->type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->type>=TS_SISTER_FX_FILTER?v->type+1:v->type,.patch=v->sunvox.patch,.quantum=v->type==TS_SISTER_FX_SUNVOX?ts_sunvox_quantum(&v->sunvox):0};
+            TsProfileEffectIdentity id={.generation=engine->profile_generation,.id=v->id,.type=v->type==TS_SISTER_FX_EQ?TS_MATRIX_FX_EQ:v->type==TS_SISTER_FX_AUTOPAN?TS_MATRIX_FX_AUTOPAN:v->type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->type>=TS_SISTER_FX_FILTER?v->type+1:v->type,.patch=v->sunvox.patch,.quantum=v->type==TS_SISTER_FX_SUNVOX?ts_sunvox_quantum(&v->sunvox):0};
             ts_profile_child_end(0,(unsigned)slot,0,&id,measured,state->has_pending);
         }
     }
@@ -2031,6 +2044,7 @@ struct TsSisterSingleFx {
         TsCharacterFilter filter;
         TsDispersion dispersion;
         TsAutoPan autopan;
+        TsEffectEq eq;
         TsResonator resonator;
     } state;
 };
@@ -2046,6 +2060,7 @@ TsSisterSingleFx *ts_sister_single_fx_new(TsSisterFxType type,unsigned rate,uint
     f->controls=(TsSisterFxSlotControls){type,1,TS_SISTER_FX_PLACE_POST,0,.5f,.5f,.5f,1,0};
     int ok=1;
     switch(type) {
+    case TS_SISTER_FX_EQ:ts_effect_eq_init(&f->state.eq,rate);ts_master_eq_default(&f->controls.eq);f->controls.eq.enabled=1;break;
     case TS_SISTER_FX_AUTOPAN:ts_autopan_init(&f->state.autopan,rate,seed);ts_autopan_settings_default(&f->controls.autopan);break;
     case TS_SISTER_FX_DISPERSION:ts_dispersion_init(&f->state.dispersion,rate);break;
     case TS_SISTER_FX_RESONATOR:ok=ts_resonator_init(&f->state.resonator,rate);break;
@@ -2091,6 +2106,7 @@ TsStereoFrame ts_sister_single_fx_process(TsSisterSingleFx *f,TsStereoFrame inpu
 {
     if(!f)return input;float direct=1;
     switch(f->controls.type) {
+    case TS_SISTER_FX_EQ:return ts_effect_eq_process(&f->state.eq,&f->controls.eq,input,f->controls.mix,f->controls.gain_db,gate,&direct);
     case TS_SISTER_FX_AUTOPAN:return ts_autopan_process(&f->state.autopan,input,gate,&direct);
     case TS_SISTER_FX_REVERB:return reverb_process(&f->timing,&f->state.reverb,&f->controls,input,gate,&direct,1);
     case TS_SISTER_FX_DELAY:return delay_process(&f->timing,&f->state.delay,&f->controls,input,gate,&direct,1);
@@ -2108,6 +2124,7 @@ void ts_sister_single_fx_process_span(TsSisterSingleFx *f,const TsStereoFrame *i
 {
     if(!f){memcpy(output,input,frames*sizeof(*output));return;}
     switch(f->controls.type) {
+    case TS_SISTER_FX_EQ:for(unsigned j=0;j<frames;++j)output[j]=ts_sister_single_fx_process(f,input[j],gate[j]);break;
     case TS_SISTER_FX_AUTOPAN:for(unsigned j=0;j<frames;++j)output[j]=ts_autopan_process(&f->state.autopan,input[j],gate[j],NULL);break;
     case TS_SISTER_FX_REVERB:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=reverb_process(&f->timing,&f->state.reverb,&f->controls,input[j],gate[j],&direct,1);}break;
     case TS_SISTER_FX_DELAY:for(unsigned j=0;j<frames;++j){float direct=1;output[j]=delay_process(&f->timing,&f->state.delay,&f->controls,input[j],gate[j],&direct,1);}break;

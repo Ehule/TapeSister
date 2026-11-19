@@ -366,7 +366,7 @@ static int meta_fx_event(const SDL_Event *e, SDL_AudioDeviceID device, AudioStat
                 int type = row < c->count ? s->type : 0;
                 int direction=wheel && wheel_event_delta(e,0)<0?-1:1;
                 type=(type+direction+TS_SISTER_FX_TYPE_COUNT)%TS_SISTER_FX_TYPE_COUNT;
-                if(type==TS_SISTER_FX_SUNVOX)type=(type+direction+TS_SISTER_FX_TYPE_COUNT)%TS_SISTER_FX_TYPE_COUNT;
+                while(type==TS_SISTER_FX_SUNVOX || type==TS_SISTER_FX_EQ)type=(type+direction+TS_SISTER_FX_TYPE_COUNT)%TS_SISTER_FX_TYPE_COUNT;
                 ts_meta_stage_default(s, type);
                 for (int j = c->map_count - 1; j >= 0; --j)
                     if (c->map[j].stage == row &&

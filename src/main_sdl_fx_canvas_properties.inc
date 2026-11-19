@@ -33,10 +33,11 @@ static void fx_properties_destroy(void)
 }
 static void fx_properties_place(MatrixRow row)
 {
-    SDL_Rect bounds;int display=SDL_GetWindowDisplayIndex(matrix_window.window);
+    SDL_Window *parent=matrix_window.window?matrix_window.window:SDL_GetKeyboardFocus();if(!parent)return;
+    SDL_Rect bounds;int display=SDL_GetWindowDisplayIndex(parent);
     if(display<0 || SDL_GetDisplayUsableBounds(display,&bounds))return;
-    int x,y,width,height;SDL_GetWindowPosition(matrix_window.window,&x,&y);
-    SDL_GetWindowSize(matrix_window.window,&width,&height);
+    int x,y,width,height;SDL_GetWindowPosition(parent,&x,&y);
+    SDL_GetWindowSize(parent,&width,&height);
     int card_x=width/2;
     for(int i=0;i<fx_canvas.count;++i)if(mx_same(fx_canvas.node[i].row,row)) {
         card_x=fx_x(fx_canvas.node[i].x)*width/MATRIX_W;break;
@@ -82,6 +83,8 @@ static void fx_properties_begin_targets(MatrixRow row,int cables)
     fx_canvas.properties=1;fx_canvas.properties_all=1;fx_canvas.text_blink=SDL_GetTicks();
     snprintf(fx_canvas.properties_name,sizeof(fx_canvas.properties_name),"%s",p?p->name:"");
     fx_canvas.properties_cursor=(int)strlen(fx_canvas.properties_name);fx_canvas.properties_color=p?p->color:0;
+    TsMosaicEvent *source=!cables && row.kind==3?mx_card(row):NULL;
+    if(source){snprintf(fx_canvas.properties_name,sizeof(fx_canvas.properties_name),"%s",source->name);fx_canvas.properties_cursor=(int)strlen(fx_canvas.properties_name);fx_canvas.properties_color=source->color;}
     fx_canvas.popup=0;matrix_window.drag=0;matrix_window.dirty=1;fx_properties_window.dirty=1;
     SDL_ShowWindow(fx_properties_window.window);
     if(SDL_GetWindowFlags(fx_properties_window.window)&SDL_WINDOW_MINIMIZED)SDL_RestoreWindow(fx_properties_window.window);
@@ -89,7 +92,8 @@ static void fx_properties_begin_targets(MatrixRow row,int cables)
     if(fx_canvas.properties_count==1)SDL_StartTextInput();else SDL_StopTextInput();
     if(cables && fx_canvas.properties_wires.count) {
         FxCanvasWire wire=fx_canvas.properties_wires.items[0];
-        fx_canvas.properties_color=fx_wire_color(wire.source,wire.destination);
+        int at=fx_wire_style_at(fx_wire_style_key(wire.source,wire.destination));
+        fx_canvas.properties_color=at<0?0:matrix_window.layout->cables[at].color;
     }
 }
 static void fx_properties_begin(MatrixRow row){fx_properties_begin_targets(row,0);}
@@ -122,6 +126,10 @@ static void fx_properties_save(void)
         if(!p)continue;
         if(fx_canvas.properties_count==1)snprintf(p->name,sizeof(p->name),"%s",fx_canvas.properties_name);
         p->color=fx_canvas.properties_color;
+        MatrixRow row=fx_canvas.properties_rows[i];TsMosaicEvent *e=row.kind==3?mx_card(row):NULL;
+        if(e){if(fx_canvas.properties_count==1)snprintf(e->name,sizeof(e->name),"%s",fx_canvas.properties_name[0]?fx_canvas.properties_name:e->source->sample.name);
+            e->color=fx_canvas.properties_color;++e->revision;++mx_card_scene(row)->revision;}
+
     }
     for(int i=0;i<fx_canvas.properties_wires.count;++i)fx_wire_set_color(fx_canvas.properties_wires.items[i],fx_canvas.properties_color);
     fx_properties_close();matrix_window.dirty=1;
@@ -249,7 +257,7 @@ static void fx_properties_paint(void)
         fx_properties_rect(96+v*432/255,150+i*32,3,20,color);
     }
     if(fx_canvas.properties_group){char label[24];snprintf(label,sizeof(label),"OPACITY %u%%",(unsigned)lroundf(fx_canvas.properties_opacity*100));fx_properties_text(16,250,label,FX_TEXT,1,20);fx_properties_rect(140,258,388,4,FX_EDGE);fx_properties_rect(140+(int)(388*fx_canvas.properties_opacity),249,3,20,color);}
-    else fx_properties_text(16,250,fx_canvas.properties_color?"CUSTOM COLOR":"AUTOMATIC TYPE COLOR",color,2,44);
+    else fx_properties_text(16,250,fx_canvas.properties_color?"CUSTOM COLOR":"AUTOMATIC SOURCE / TYPE COLOR",color,2,44);
     fx_properties_button(0,"APPLY");fx_properties_button(1,"CANCEL");fx_properties_button(2,"RESET");
     SDL_UpdateTexture(fx_properties_window.texture,NULL,fx_properties_window.pixels,FX_PROPERTIES_W*sizeof(uint32_t));
     SDL_RenderCopy(fx_properties_window.renderer,fx_properties_window.texture,NULL,NULL);

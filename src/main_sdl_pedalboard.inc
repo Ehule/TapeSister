@@ -42,7 +42,7 @@ static int sister_pedalboard_action(SDL_AudioDeviceID device, AudioState *audio,
     } else {
         if (fx->slot_count <= TS_SISTER_FX_SLOT_MIN) {
             sister->model.fx_remove_confirmation = 0;
-            snprintf(sister->model.status,sizeof(sister->model.status),"PEDALBOARD MINIMUM: 5 SLOTS");
+            snprintf(sister->model.status,sizeof(sister->model.status),"PEDALBOARD MINIMUM: 1 SLOT");
             return 1;
         }
         if (hit.action == TS_SISTER_UI_ACTION_FX_REMOVE &&
