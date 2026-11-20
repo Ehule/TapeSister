@@ -32,23 +32,6 @@ static void mosaic_loop_commit(SDL_AudioDeviceID device,TsUiState *ui,TsMosaicRa
     if(range.end>range.start)mosaic_loop_status(ui,range);
     else snprintf(ui->status,sizeof(ui->status),"TIME RANGE CLEARED / REPEAT USES WHOLE ARRANGEMENT");
 }
-static void mosaic_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui)
-{
-    if(ui->mosaic->marker_loop){mosaic_marker_loop_toggle(device,ui);return;}
-    if(device)SDL_LockAudioDevice(device);
-    TsMosaicRange range={0,0};int cue=ui->mosaic_marker_range_pending;
-    if(cue)range=ts_mosaic_marker_range(ui->mosaic,ui->mosaic_marker_selected-1);
-    if(cue && range.end<range.start+.001) {
-        if(device)SDL_UnlockAudioDevice(device);
-        snprintf(ui->status,sizeof(ui->status),"MARKER HAS NO LATER ENDPOINT / CHOOSE A RANGE");return;
-    }
-    ts_mosaic_checkpoint(ui->mosaic);
-    if(cue){ts_mosaic_set_loop_range(ui->mosaic,range.start,range.end);ui->mosaic_marker_range_pending=0;}
-    ts_mosaic_set_repeat(ui->mosaic,cue?1:!ui->mosaic->repeat);
-    if(device)SDL_UnlockAudioDevice(device);
-    snprintf(ui->status,sizeof(ui->status),"REPEAT %s / %s",ui->mosaic->repeat?"ON":"OFF",
-        ui->mosaic->loop_range.end>ui->mosaic->loop_range.start?"SELECTED TIME RANGE":"WHOLE ARRANGEMENT");
-}
 static TsMosaicRange mosaic_loop_from_cards(const TsUiState *ui)
 {
     TsMosaicRange range={1000000,0};
@@ -57,6 +40,25 @@ static TsMosaicRange mosaic_loop_from_cards(const TsUiState *ui)
         range.end=fmax(range.end,ui->mosaic->events[i].start+ui->mosaic->events[i].duration);
     }
     return range.end>range.start?range:(TsMosaicRange){0,0};
+}
+static void mosaic_loop_toggle(SDL_AudioDeviceID device,TsUiState *ui)
+{
+    if(ui->mosaic->marker_loop){mosaic_marker_loop_toggle(device,ui);return;}
+    if(device)SDL_LockAudioDevice(device);
+    TsMosaicRange range={0,0};int cue=ui->mosaic_marker_range_pending;
+    if(cue)range=cue==2?ui->mosaic->loop_range:ts_mosaic_marker_range(ui->mosaic,ui->mosaic_marker_selected-1);
+    if(cue && range.end<range.start+.001) {
+        if(device)SDL_UnlockAudioDevice(device);
+        snprintf(ui->status,sizeof(ui->status),"MARKER HAS NO LATER ENDPOINT / CHOOSE A RANGE");return;
+    }
+    if(!cue && !ui->mosaic->repeat)range=mosaic_loop_from_cards(ui);
+    ts_mosaic_checkpoint(ui->mosaic);
+    if(!cue && range.end>=range.start+.001)ts_mosaic_set_loop_range(ui->mosaic,range.start,range.end);
+    if(cue){ts_mosaic_set_loop_range(ui->mosaic,range.start,range.end);ui->mosaic_marker_range_pending=0;}
+    ts_mosaic_set_repeat(ui->mosaic,cue?1:!ui->mosaic->repeat);
+    if(device)SDL_UnlockAudioDevice(device);
+    snprintf(ui->status,sizeof(ui->status),"REPEAT %s / %s",ui->mosaic->repeat?"ON":"OFF",
+        ui->mosaic->loop_range.end>ui->mosaic->loop_range.start?"SELECTED TIME RANGE":"WHOLE ARRANGEMENT");
 }
 static void mosaic_loop_close(TsUiState *ui)
 {ui->mosaic_loop_open=ui->mosaic_loop_field=0;SDL_StopTextInput();}

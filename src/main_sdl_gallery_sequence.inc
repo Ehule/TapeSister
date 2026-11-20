@@ -27,7 +27,6 @@ static void gallery_sequence_follow(SDL_AudioDeviceID device,AudioState *a,TsUiS
         g->canvas[i].scale=ui->mosaic_scale;g->canvas[i].hscale=ui->mosaic_hscale;
     }
     mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);
-    if(c->clipboard_epoch==ui->mosaic->epoch && c->clipboard.source && c->clipboard.source->pins)--c->clipboard.source->pins;
     for(int i=0;i<256;++i)if(c->pattern_sources[i] && c->pattern_sources[i]->pins)--c->pattern_sources[i]->pins;
     if(device)SDL_LockAudioDevice(device);
     TsMosaicCanvas to=g->canvas[g->active];
@@ -35,7 +34,7 @@ static void gallery_sequence_follow(SDL_AudioDeviceID device,AudioState *a,TsUiS
     a->mosaic_keyboard_sample=NULL;ui->mosaic_live_key_valid=0;
     ui->mosaic_source_keys=ui->mosaic_source_key_count=0;
     if(device)SDL_UnlockAudioDevice(device);
-    runtime_mosaic_sources_clear_selection(a);mosaic_controller_free(c);c->pages=pages;
+    runtime_mosaic_sources_clear_selection(a);mosaic_controller_change_scene(c);c->pages=pages;
     mosaic_select_only(ui,0);ui->mosaic_source_selected=-1;ui->mosaic_live_status[0]=0;
     ui->mosaic_scroll=to.scroll;ui->mosaic_xscroll=to.xscroll;
     ui->mosaic_scale=to.scale>0?to.scale:24;ui->mosaic_hscale=to.hscale>0?to.hscale:1;

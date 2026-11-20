@@ -7,7 +7,7 @@ struct MosaicController {
     TsInstrument *bank;
     TsInstrument *documents[TS_MOSAIC_EVENTS];
     uint64_t document_ids[TS_MOSAIC_EVENTS], document_epochs[TS_MOSAIC_EVENTS];
-    uint64_t clipboard_epoch, ui_epoch, drag_epoch;
+    uint64_t ui_epoch, drag_epoch;
     const float *bank_data[TS_BANK_SLOT_COUNT];
     uint32_t bank_revision[TS_BANK_SLOT_COUNT], bank_rate[TS_BANK_SLOT_COUNT];
     uint8_t bank_channels[TS_BANK_SLOT_COUNT];
@@ -61,7 +61,7 @@ struct MosaicController {
     Uint32 drag_scroll_ms;
     uint64_t card_mix_event;
     double fade_in,fade_out,card_pan,card_pan_span; /* Opening values of direct card mix drags. */
-    TsMosaicEvent clipboard;
+    TsMosaic *clipboard; /* Owns copied sources across Gallery scene lifetimes. */
     int fm_parked, fm_edit_exit, portal_return_fm;
     uint64_t fm_owner, fm_epoch;
 };
@@ -91,6 +91,7 @@ static void mosaic_selection_repair(TsUiState *ui)
 }
 static void mosaic_select_add(TsUiState *ui,uint64_t id)
 {
+    ui->mosaic_marker_range_pending=0;
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,id);if(!e)return;
     int i=(int)(e-ui->mosaic->events);
     if(ui->mosaic_selection[i]!=id || !ui->mosaic_selection_order[i]) {
@@ -100,12 +101,14 @@ static void mosaic_select_add(TsUiState *ui,uint64_t id)
 }
 static void mosaic_select_only(TsUiState *ui,uint64_t id)
 {
+    ui->mosaic_marker_range_pending=0;
     memset(ui->mosaic_selection,0,sizeof(ui->mosaic_selection));
     memset(ui->mosaic_selection_order,0,sizeof(ui->mosaic_selection_order));
     ui->mosaic_selection_serial=ui->mosaic_selected=0;mosaic_select_add(ui,id);
 }
 static void mosaic_select_remove(TsUiState *ui,uint64_t id)
 {
+    ui->mosaic_marker_range_pending=0;
     TsMosaicEvent *e=ts_mosaic_find(ui->mosaic,id);if(!e)return;
     int i=(int)(e-ui->mosaic->events);ui->mosaic_selection[i]=ui->mosaic_selection_order[i]=0;
     if(ui->mosaic_selected==id)ui->mosaic_selected=0;
@@ -168,9 +171,9 @@ static void mosaic_sources_refresh(TsUiState *ui,const TsInstrument *instrument,
         c->pattern_ready=c->pattern_count=0;memset(c->pattern_notice,0,sizeof(c->pattern_notice));c->pattern_owner=0;ui->mosaic_pattern_choice=0;memset(c->pattern_sources,0,sizeof(c->pattern_sources));
         c->picked_count=c->scatter_pool_count=c->zoom_saved=0;
         ui->mosaic_source_pick_count=ui->mosaic_scatter_open=ui->mosaic_spacing_confirm=ui->mosaic_align_open=0;
-        if(ui->mosaic_loop_open || ui->mosaic_marker_open)SDL_StopTextInput();
+        if(ui->mosaic_loop_open || ui->mosaic_marker_open || ui->mosaic_array_open)SDL_StopTextInput();
         ui->mosaic_marker_open=ui->mosaic_marker_selected=ui->mosaic_views_open=ui->mosaic_marker_range_pending=0;
-        ui->mosaic_loop_open=0;
+        ui->mosaic_loop_open=ui->mosaic_array_open=0;
         ui->mosaic_source_selected=-1;
         if(!restored) {
             /* A fresh controller may already have an explicit initial filter.
@@ -625,5 +628,13 @@ static int mosaic_enter(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui
 static void mosaic_controller_free(MosaicController *c)
 {
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(c->documents[i]){ts_instrument_free(c->documents[i]);free(c->documents[i]);}
+    ts_mosaic_free(c->clipboard);
     if(c->bank){ts_instrument_free(c->bank);free(c->bank);}memset(c,0,sizeof(*c));
+}
+
+/* Scene navigation keeps the project clipboard; New/Open still frees it. */
+static void mosaic_controller_change_scene(MosaicController *c)
+{
+    TsMosaic *clipboard=c->clipboard;
+    c->clipboard=NULL;mosaic_controller_free(c);c->clipboard=clipboard;
 }

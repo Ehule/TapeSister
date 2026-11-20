@@ -145,6 +145,36 @@ static void view_codec(void)
     assert(ts_matrix_layout_read(&read,"FxCanvas.View","0,0,0")==-1);
     assert(ts_matrix_layout_read(&read,"FxCanvas.Node9999","4,1,0,0")==-1);
 }
+static void new_effect_placement(void)
+{
+    MatrixWindow *w=&matrix_window;fx_canvas.movement=0;fx_canvas.active_view=0;fx_canvas.meta=0;
+    fx_build(&pages,&bank);static TsMatrixLayout saved;saved=*w->layout;
+    FxCanvasNode *main=node(TS_MATRIX_MAIN),*eq=node(TS_MATRIX_EQ),*limiter=node(TS_MATRIX_LIMITER);assert(main && eq && limiter);
+    TsFxCanvasPosition *p=fx_position(main->row,1);p->x=500;p->y=400;
+    p=fx_position(eq->row,1);p->x=760;p->y=400;
+    p=fx_position(limiter->row,1);p->x=1020;p->y=400;
+    FxCanvasNode *obstacle=node(TS_MATRIX_TRACKER);assert(obstacle);
+    p=fx_position(obstacle->row,1);p->x=500;p->y=272;p->scale=3;
+    w->layout->canvas_snap=1;fx_build(&pages,&bank);
+    for(int pass=0;pass<3;++pass) {
+        toolbar_click(FX_TOOL_ADD);assert(fx_canvas.place_x==500 && fx_canvas.place_y==272);
+        if(pass==1){fx_popup_open(fx_x(510),fx_y(300));} /* Explicit occupied point. */
+        click(fx_canvas.popup_x+40,fx_canvas.popup_y+32+(TS_MATRIX_FX_AUTOPAN-1)*30+10,1);
+        uint32_t id=w->effect_open;FxCanvasNode *added=instance(id);assert(added);
+        for(int i=0;i<fx_canvas.count;++i) {
+            const FxCanvasNode *other=&fx_canvas.node[i];if(other==added)continue;
+            assert(added->x+fx_node_w(added)+12<=other->x || other->x+fx_node_w(other)+12<=added->x ||
+                   added->y+fx_node_h(added)+12<=other->y || other->y+fx_node_h(other)+12<=added->y);
+        }
+        assert(fmodf(added->x,FX_GRID)==0 && fmodf(added->y,FX_GRID)==0);
+        float x=added->x,y=added->y;MatrixRow row=added->row;
+        key(SDLK_z,KMOD_CTRL);fx_build(&pages,&bank);assert(!instance(id));
+        key(SDLK_y,KMOD_CTRL);fx_build(&pages,&bank);added=instance(id);
+        assert(added && fx_position(row,0)->x==x && fx_position(row,0)->y==y);
+        key(SDLK_z,KMOD_CTRL);fx_build(&pages,&bank);
+    }
+    *w->layout=saved;matrix_history_clear();fx_build(&pages,&bank);
+}
 static void grouped_text_selection(void)
 {
     TsMatrixLayout *l=matrix_window.layout;static TsMatrixLayout saved;saved=*l;matrix_history_clear();
@@ -623,6 +653,7 @@ int main(int argc,char **argv)
     inspector_controls(getenv("TS_FX_PREVIEW"));edit_controls();canvas_gestures(c.effect[dist].id);disconnect_main_prism();routing_preferences();sunvox_browser(getenv("TS_FX_PREVIEW"));
     gallery_view();text_labels();grouped_text_selection();patch_workflow();patch_twenty_cards();control_and_bus_wires();movement_heading_objects();rug_groups();
     consolidate_and_arrange();context_actions();autopan_controller();edit_history_without_navigation();save_in_fx_canvas();
+    new_effect_placement();
     key(SDLK_BACKQUOTE,KMOD_NONE);assert(!matrix_window.visible && ui.mosaic_open && !ui.tracker_open);
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;

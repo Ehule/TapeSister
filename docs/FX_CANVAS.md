@@ -80,6 +80,14 @@ Right-clicking empty space also keeps the selection. Use the mouse or Up/Down
 and Enter; Escape or clicking outside closes the menu without performing an action.
 Middle-drag still pans, and double-clicking empty space still opens the effect picker.
 
+**+ EFFECT** and **Ctrl+N** place new cards in clear space above Main Mix, Master EQ
+and Limiter. The area fills in three columns, then grows upward. Adding from a
+clicked position uses that point if it fits, or nearby clear space. Placement
+checks the full size of existing cards across all movements, including input/output
+cards and sources. The new card is selected and brought into view; existing cards
+stay where they are.
+
+
 **Ctrl+Z** undoes editing operations; **Ctrl+Y** or **Ctrl+Shift+Z** redoes them.
 Zooming, panning, framing, and resizing the inspector do not enter edit history
 or discard redo. Undo/redo keeps the current zoom and pan while restoring effect

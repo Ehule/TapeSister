@@ -29,6 +29,38 @@ static void fx_popup_open(int x,int y)
     }
     matrix_window.drag=0;
 }
+/* Toolbar/keyboard additions start above the fixed finishing chain.
+   Pointer additions keep the clicked world position when there is room. */
+static void fx_popup_open_default(void)
+{
+    fx_popup_open(400,220);
+    int found=0;float x=0,y=0;
+    const int anchors[]={TS_MATRIX_MAIN,TS_MATRIX_EQ,TS_MATRIX_LIMITER};
+    for(int i=0;i<3;++i) {
+        TsFxCanvasPosition *p=fx_position((MatrixRow){.kind=2,.index=anchors[i]},0);
+        if(!p)continue;
+        if(!found){x=p->x;y=p->y;found=1;}else y=fminf(y,p->y);
+    }
+    fx_canvas.place_x=x;fx_canvas.place_y=y-128;
+}
+static void fx_place_new_effect(FxCanvasNode *node)
+{
+    TsFxCanvasPosition *p=fx_position(node->row,1);if(!p)return;
+    int snap=matrix_window.layout->canvas_snap && !(SDL_GetModState()&KMOD_ALT);
+    float x=snap?fx_snap(fx_canvas.place_x):fx_canvas.place_x;
+    float y=snap?fx_snap(fx_canvas.place_y):fx_canvas.place_y;
+    /* Three columns grow upward near the chain. Include every movement,
+       unsaved source positions and the actual size of enlarged cards. */
+    for(int row=0;;++row)for(int col=0;col<3;++col) {
+        float px=x+col*256.f,py=y-row*128.f;int blocked=0;
+        for(int i=0;i<fx_canvas.count && !blocked;++i) {
+            const FxCanvasNode *other=&fx_canvas.node[i];if(other==node)continue;
+            blocked=px+fx_node_w(node)+24>other->x && px<other->x+fx_node_w(other)+24 &&
+                py+fx_node_h(node)+24>other->y && py<other->y+fx_node_h(other)+24;
+        }
+        if(!blocked){p->x=node->x=px;p->y=node->y=py;return;}
+    }
+}
 #include "main_sdl_fx_canvas_context.inc"
 static void fx_popup_paint(void)
 {
@@ -69,10 +101,14 @@ static void fx_popup_add(int type,int factory,SDL_AudioDeviceID device,AudioStat
     if(w->controls.next_effect_id==before)return; /* Failed staging leaves the menu and graph intact. */
     int slot=mx_effect_slot();
     if(slot>=0)fx_canvas.revealed[slot]=w->effect_open;
+    uint64_t movement=fx_canvas.movement;int active=fx_canvas.active_view;
+    fx_canvas.movement=0;fx_canvas.active_view=0;
     fx_canvas.popup=0;w->filter=0;mx_rows(pages,bank);fx_build(pages,bank);
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==w->effect_open) {
-        TsFxCanvasPosition *p=fx_position(fx_canvas.node[i].row,1);
-        if(p){p->x=fx_canvas.place_x;p->y=fx_canvas.place_y;fx_canvas.node[i].x=p->x;fx_canvas.node[i].y=p->y;}
+        fx_place_new_effect(&fx_canvas.node[i]);break;
+    }
+    fx_canvas.movement=movement;fx_canvas.active_view=active;fx_build(pages,bank);
+    for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==w->effect_open) {
         fx_clear_wires();fx_select(&fx_canvas.node[i],0);fx_ensure_visible(&fx_canvas.node[i]);
         if(fx_canvas.node[i].outside_filter)snprintf(w->status,sizeof(w->status),"NEW EFFECT SHOWN OUTSIDE MOVEMENT / KEPT VISIBLE UNTIL VIEW FILTER CHANGES / Z: FRAME");
         break;

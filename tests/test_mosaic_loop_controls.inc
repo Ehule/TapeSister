@@ -16,6 +16,21 @@ static void test_mosaic_loop_controls(SDL_Window *window)
     TsMosaicEvent original_a=*a,original_b=*b;
     ui.mosaic_scroll=ui.mosaic_xscroll=0;ui.mosaic_scale=20;ui.mosaic_hscale=1;
     scene->time=3;scene->playing=1;int history=scene->history_count;
+    /* Repeat crops to the entire selected span in one undoable edit. */
+    assert(ts_mosaic_set_loop_range(scene,.25,12));
+    click(window,290,44,1);
+    assert(scene->repeat && scene->loop_range.start==1 && scene->loop_range.end==7);
+    assert(scene->history_count==history+1 && scene->time==3 && scene->playing);
+    key(window,SDLK_z,KMOD_CTRL);
+    assert(!scene->repeat && scene->loop_range.start==.25 && scene->loop_range.end==12);
+    key(window,SDLK_y,KMOD_CTRL);assert(scene->repeat && scene->loop_range.end==7);
+    click(window,290,44,1);assert(!scene->repeat && scene->loop_range.start==1 && scene->loop_range.end==7);
+    mosaic_select_only(&ui,0);assert(ts_mosaic_set_loop_range(scene,2,6));
+    click(window,290,44,1);assert(scene->repeat && scene->loop_range.start==2 && scene->loop_range.end==6);
+    click(window,290,44,1);assert(!scene->repeat);
+    assert(ts_mosaic_set_loop_range(scene,0,0));click(window,290,44,1);assert(scene->repeat && !scene->loop_range.end);
+    click(window,290,44,1);assert(!scene->repeat);
+    mosaic_select_only(&ui,a->id);mosaic_select_add(&ui,b->id);history=scene->history_count;
     /* Upward selection previews without seeking, editing cards or adding undo. */
     SDL_SetModState(KMOD_SHIFT);click(window,130,226,1);SDL_SetModState(KMOD_NONE);
     assert(ui.mosaic_loop_drag && !scene->loop_range.end);

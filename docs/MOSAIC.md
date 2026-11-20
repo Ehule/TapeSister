@@ -24,7 +24,9 @@ Hold **Alt** while moving, copying, placing, or resizing cards to snap to the
 enabled grid. Ordinary dragging remains free. With GRID off, Alt retains the
 existing card-to-card snapping (and matching lengths for group edge resizing).
 Group movement snaps the earliest start and preserves all relative offsets.
-G/S previews use the same grid. Grid lines thin out when zoomed out, while
+G/S previews use the same grid. Enabled grid lines are visible beneath the cards
+at native window resolution and update immediately when settings or tempo change.
+Grid lines thin out when zoomed out, while
 snapping retains the chosen division.
 
 Grid preferences save separately for each Gallery canvas and do not affect
@@ -412,12 +414,65 @@ Overview drawing reuses cached 2,048-bin peak/RMS envelopes; close zoom reads
 actual sample ranges instead of enlarging those bins. Source thumbnails cache
 extrema at their displayed width. None of this analysis runs in the audio callback.
 
+## Array sources
+
+Click a source in the sidebar (Shift-click to choose several), then right-click
+empty canvas space and choose **Array Sources...**. The dialog offers:
+
+- **Count + Grid:** choose a copy count, a grid unit/division and how many grid
+  steps to leave between starts. The first start snaps forward from the original
+  right-click time. A time selection is not required.
+- **Fill Range:** Shift-drag the ruler to select a time range first. Place copies
+  at the chosen grid spacing, from the first grid line at or after the range
+  start up to, but excluding, its end.
+- **Fit Count:** distribute an exact number of copies evenly across the selected
+  range. For example, ten copies in a one-second selection start 0.1 seconds
+  apart. Spacing is calculated from the range and count, independently of GRID.
+
+Type counts and grid-step distances or adjust them with the mouse wheel. Ctrl+A
+replaces a field, Tab moves between editable fields, Enter creates the array,
+Escape cancels. The dialog shows the calculated spacing and total card count.
+For several sources, Count means copies of the entire ordered source row.
+
+Grid choices initially match the canvas grid; changing them in this dialog only
+changes array spacing. Seconds, beats and bars use full snap precision even when
+zoom hides some grid lines. Beat/bar spacing follows the master tempo at insertion;
+changing tempo later does not move the cards. The original right-click sets the
+horizontal position. With **SPACE off**, overlaps are allowed. With **SPACE on**,
+cards move sideways to clear existing cards and earlier copies, preserving their
+start times. Each card keeps its full source length, loop region, notes, fades
+and mix settings, so the final copy can extend past the range's end.
+
+The time selection stays unchanged. All new cards are selected, and the whole
+array is one undo step. Insufficient capacity adds nothing and reports the
+needed/free card counts; reduce the count, widen spacing, or shorten the range.
+
+## Copy a passage between Gallery canvases
+
+Select the cards to copy, then press **Ctrl+C** or choose **Copy Cards** from the
+right-click menu. Empty-space right-click also offers **Add Video**; right-clicking
+a video card still opens its settings. Switch to another Gallery canvas, set its playhead, and press
+**Ctrl+V** or choose **Paste Cards**. The earliest copied start lands at the playhead;
+timing offsets, gaps and horizontal spacing stay intact. Auto-space moves the
+whole group sideways when needed. The pasted cards are selected, ready for **G**.
+
+Audio, captured tracker scores and their instruments, video references, notes,
+fades, names, colors, levels, pan and source routing are retained. Connected FX
+remain the same shared project processors. The clipboard owns a snapshot, so
+editing or deleting the original cards/canvas does not break a later paste.
+A group paste is one undo step; insufficient card capacity rejects the whole group.
+New/Open Project clears the clipboard. Copy works on complete selected cards;
+it does not cut cards at the time-range boundaries.
+
 ## Loop a passage
 
 **Shift-drag the vertical time ruler** to select a passage. Drag either end handle
 to refine it; the status line shows start, end and duration in seconds. Card selection
 is independent. **Shift+L** sets the range to the earliest start and latest end of
-selected cards, including gaps between them. Press **L** or **REPEAT** to loop it.
+selected cards, including gaps between them. Enabling **L** or **REPEAT** with cards
+selected also sets that range automatically, from the earliest start to the latest
+end. With no cards selected, it uses the existing time range or whole arrangement.
+Turning Repeat off retains the range; marker cue looping keeps its existing priority.
 Selecting a range does not start playback or enable Repeat; **Space** plays/pauses.
 
 **Double-click the ruler** to enter exact start/end times in seconds. Tab switches
@@ -426,8 +481,8 @@ cancels. A range must be at least 0.001 seconds long, within 0–1,000,000 secon
 The dialog also shows its duration. Drag previews do not affect playback until
 release; Escape or loss of window focus cancels a drag. FOLLOW pauses during dragging.
 
-**Right-click the highlighted ruler range** to clear it. Repeat then uses the whole
-arrangement again. Toggling Repeat off keeps the range for later. Range edits,
+**Right-click the highlighted ruler range** to clear it. With no cards selected,
+enabling Repeat then uses the whole arrangement again. Toggling Repeat off keeps the range for later. Range edits,
 clearing and Repeat changes support Ctrl+Z/Ctrl+Y. The range and Repeat setting save
 with the project; earlier project formats open with no time range.
 

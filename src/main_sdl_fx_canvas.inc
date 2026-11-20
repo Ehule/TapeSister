@@ -121,8 +121,9 @@ static void fx_store_initial_position(TsFxCanvasPosition *position,float x,float
     if(layout->canvas_snap){x=roundf(x/FX_GRID)*FX_GRID;y=roundf(y/FX_GRID)*FX_GRID;}
     for(int i=0;i<layout->canvas_count;) {
         TsFxCanvasPosition *other=&layout->canvas[i++];
-        if(other==position || fabsf(x-other->x)>=FX_NODE_W+12 ||
-           fabsf(y-other->y)>=FX_NODE_H+12)continue;
+        float scale=other->scale?other->scale:1;
+        if(other==position || x+FX_NODE_W+12<=other->x || x>=other->x+FX_NODE_W*scale+12 ||
+           y+FX_NODE_H+12<=other->y || y>=other->y+FX_NODE_H*scale+12)continue;
         y+=layout->canvas_snap?128.f:120.f;
         i=0;
     }

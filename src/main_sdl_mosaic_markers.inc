@@ -145,7 +145,7 @@ static int mosaic_marker_event(const SDL_Event *event,SDL_AudioDeviceID device,
             int anchor=ui->mosaic_marker_selected-1;
             if(v.stored && anchor>=0 && anchor<TS_MOSAIC_MARKERS && ui->mosaic->markers[anchor].stored) {
                 double a=ui->mosaic->markers[anchor].time,b=v.time;
-                if(a!=b)mosaic_loop_commit(device,ui,(TsMosaicRange){fmin(a,b),fmax(a,b)});
+                if(a!=b){mosaic_loop_commit(device,ui,(TsMosaicRange){fmin(a,b),fmax(a,b)});ui->mosaic_marker_range_pending=2;}
             } else if(!v.stored) {
                 v.stored=1;v.time=mosaic_marker_playhead(device,ui);mosaic_marker_commit(device,ui,slot,v);
             } else mosaic_marker_jump(device,ui,slot);

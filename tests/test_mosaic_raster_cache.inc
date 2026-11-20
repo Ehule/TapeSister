@@ -45,6 +45,20 @@ static void test_mosaic_raster_cache(TsUiState *ui,TsInstrument *instrument)
             assert(warm[0].raster_count==count);
         }
         check_scene_cache(ui,instrument,warm,w,h);assert(!warm[0].dirty_w && !warm[0].dirty_h);
+        /* Grid ink belongs to the native raster, and settings/tempo invalidate
+           it without a scroll gesture. A steady grid still reuses the raster. */
+        size_t bytes=(size_t)warm[0].width*warm[0].height*4;
+        uint32_t *without_grid=malloc(bytes);assert(without_grid);memcpy(without_grid,warm[0].pixels,bytes);
+        m->grid=(TsMosaicGrid){1,1,2};ui->mosaic_grid_quarter=.5;
+        count=warm[0].raster_count;check_scene_cache(ui,instrument,warm,w,h);
+        assert(warm[0].raster_count==count+1 && memcmp(without_grid,warm[0].pixels,bytes));free(without_grid);
+        count=warm[0].raster_count;check_scene_cache(ui,instrument,warm,w,h);assert(warm[0].raster_count==count);
+        ui->mosaic_grid_quarter=.8;check_scene_cache(ui,instrument,warm,w,h);assert(warm[0].raster_count==count+1);
+        m->grid.unit=0;m->grid.division=1;count=warm[0].raster_count;
+        check_scene_cache(ui,instrument,warm,w,h);assert(warm[0].raster_count==count+1);
+        m->grid.division=2;check_scene_cache(ui,instrument,warm,w,h);
+        m->grid.enabled=0;count=warm[0].raster_count;check_scene_cache(ui,instrument,warm,w,h);
+        assert(warm[0].raster_count==count+1);
         ui->mosaic_hover_event=m->events[1].id;check_scene_cache(ui,instrument,warm,w,h);
         ui->mosaic_selected=m->events[2].id;ui->mosaic_selection[3]=m->events[3].id;
         check_scene_cache(ui,instrument,warm,w,h);
