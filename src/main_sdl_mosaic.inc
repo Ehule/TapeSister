@@ -509,7 +509,7 @@ static int mosaic_context_event(const SDL_Event *event,SDL_AudioDeviceID device,
             if(item==0)mosaic_properties_open(audio,ui,c,bank);
             if(item==4)mosaic_clipboard_copy(device,ui,c);
             if(item==5)mosaic_clipboard_paste(device,ui,c);
-            if(item==7)mosaic_array_open(ui,c);
+            if(item==7)mosaic_array_open(device,ui,c);
             if(item==6) {
                 mosaic_video_open(ui,c,0);
                 ui->mosaic_video_time=ui->mosaic_scroll+(c->hover_y-66)/(ui->mosaic_scale>0?ui->mosaic_scale:24);
@@ -885,8 +885,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
             mosaic_pattern_notices(ui,instrument,c,0);return 1;
         }
         if(x>=113 && x<151 && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
-            if(device)SDL_LockAudioDevice(device);ts_mosaic_seek(ui->mosaic,ui->mosaic_scroll+(y-66)/ui->mosaic_scale);
-            if(device)SDL_UnlockAudioDevice(device);return 1;
+            mosaic_grid_seek(device,ui,ui->mosaic_scroll+(y-66)/ui->mosaic_scale);return 1;
         }
         if(x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
             TsMosaicEvent *e=mosaic_card_at(ui,x,y);

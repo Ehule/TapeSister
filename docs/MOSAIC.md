@@ -29,6 +29,13 @@ at native window resolution and update immediately when settings or tempo change
 Grid lines thin out when zoomed out, while
 snapping retains the chosen division.
 
+With **GRID on**, clicking the time ruler or middle-clicking the canvas places
+the playhead on the nearest grid line. Playback remains continuous. Hold **Alt**
+while adjusting a time-selection handle to snap that edge, or **Shift+Alt-drag**
+the ruler to snap both ends of a new range. Alt can be pressed or released during
+the gesture; the preview updates immediately. With GRID off, range edges and
+playhead placement remain free.
+
 Grid preferences save separately for each Gallery canvas and do not affect
 audio processing. Old projects open with GRID off. Projects with saved custom
 grid preferences use Mosaic formats 22/23 and require this build or newer.
@@ -420,8 +427,9 @@ Click a source in the sidebar (Shift-click to choose several), then right-click
 empty canvas space and choose **Array Sources...**. The dialog offers:
 
 - **Count + Grid:** choose a copy count, a grid unit/division and how many grid
-  steps to leave between starts. The first start snaps forward from the original
-  right-click time. A time selection is not required.
+  steps to leave between starts. The first card starts exactly at the playhead
+  position captured when the dialog opens. Playback can continue while setting
+  up the array without moving its insertion point. A time selection is not required.
 - **Fill Range:** Shift-drag the ruler to select a time range first. Place copies
   at the chosen grid spacing, from the first grid line at or after the range
   start up to, but excluding, its end.
@@ -467,7 +475,9 @@ it does not cut cards at the time-range boundaries.
 ## Loop a passage
 
 **Shift-drag the vertical time ruler** to select a passage. Drag either end handle
-to refine it; the status line shows start, end and duration in seconds. Card selection
+to refine it; hold **Alt** with GRID enabled to snap the dragged edge. The opposite
+edge stays fixed. **Shift+Alt-drag** snaps both ends of a new selection. Each gesture
+is one undo step. The status line shows start, end and duration in seconds. Card selection
 is independent. **Shift+L** sets the range to the earliest start and latest end of
 selected cards, including gaps between them. Enabling **L** or **REPEAT** with cards
 selected also sets that range automatically, from the earliest start to the latest

@@ -18,6 +18,29 @@ static void mosaic_loop_status(TsUiState *ui,TsMosaicRange range)
     snprintf(ui->status,sizeof(ui->status),"RANGE %.3F - %.3F S / %.3F S / L LOOP",
         range.start,range.end,range.end-range.start);
 }
+static void mosaic_loop_preview_update(TsUiState *ui,const MosaicController *c,int alt)
+{
+    double time=c->loop_pointer,anchor=c->loop_anchor;
+    int snap=alt && ui->mosaic->grid.enabled;
+    double step=ts_mosaic_grid_step(ui->mosaic->grid,ui->mosaic_grid_quarter);
+    if(snap) {
+        double upper=floor(1000000/step+1e-9)*step;
+        time=fmin(upper,ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,time));
+        anchor=fmin(upper,ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,anchor));
+    }
+    if(ui->mosaic_loop_drag==1) {
+        if(time<=1000000 && anchor<=1000000)ui->mosaic_loop_preview=(TsMosaicRange){fmin(time,anchor),fmax(time,anchor)};
+    } else if(ui->mosaic_loop_drag==2) {
+        double limit=ui->mosaic_loop_preview.end-.001;
+        if(snap)limit=floor(limit/step+1e-9)*step;
+        if(limit>=0)ui->mosaic_loop_preview.start=fmax(0,fmin(time,limit));
+    } else {
+        double limit=ui->mosaic_loop_preview.start+.001,upper=1000000;
+        if(snap){limit=ceil(limit/step-1e-9)*step;upper=floor(upper/step+1e-9)*step;}
+        if(limit<=upper)ui->mosaic_loop_preview.end=fmin(upper,fmax(time,limit));
+    }
+    mosaic_loop_status(ui,ui->mosaic_loop_preview);
+}
 static void mosaic_loop_commit(SDL_AudioDeviceID device,TsUiState *ui,TsMosaicRange range)
 {
     TsMosaic *m=ui->mosaic;
@@ -104,12 +127,13 @@ static int mosaic_loop_event(const SDL_Event *event,SDL_AudioDeviceID device,
            (motion && !(event->motion.state&SDL_BUTTON_LMASK))) {
             ui->mosaic_loop_drag=0;snprintf(ui->status,sizeof(ui->status),"TIME RANGE EDIT CANCELLED");return 1;
         }
-        if(motion || (up && event->button.button==SDL_BUTTON_LEFT)) {
-            double time=fmax(0,fmin(1000000,ui->mosaic_scroll+(fmax(66,fmin((TS_MOSAIC_CANVAS_BOTTOM-1),y))-66)/ui->mosaic_scale));
-            if(ui->mosaic_loop_drag==1)ui->mosaic_loop_preview=(TsMosaicRange){fmin(time,c->loop_anchor),fmax(time,c->loop_anchor)};
-            else if(ui->mosaic_loop_drag==2)ui->mosaic_loop_preview.start=fmin(time,ui->mosaic_loop_preview.end-.001);
-            else ui->mosaic_loop_preview.end=fmax(time,ui->mosaic_loop_preview.start+.001);
-            mosaic_loop_status(ui,ui->mosaic_loop_preview);
+        int alt_key=(key || event->type==SDL_KEYUP) &&
+            (event->key.keysym.sym==SDLK_LALT || event->key.keysym.sym==SDLK_RALT);
+        if(motion || (up && event->button.button==SDL_BUTTON_LEFT) || alt_key) {
+            if(!alt_key)c->loop_pointer=fmax(0,fmin(1000000,ui->mosaic_scroll+(fmax(66,fmin((TS_MOSAIC_CANVAS_BOTTOM-1),y))-66)/ui->mosaic_scale));
+            int alt=(mod&KMOD_ALT)!=0;
+            if(alt_key)alt=key || (mod&(event->key.keysym.sym==SDLK_LALT?KMOD_RALT:KMOD_LALT));
+            mosaic_loop_preview_update(ui,c,alt);
             if(up) {
                 if(ui->mosaic_loop_preview.end>=ui->mosaic_loop_preview.start+.001)
                     mosaic_loop_commit(device,ui,ui->mosaic_loop_preview);
@@ -133,7 +157,7 @@ static int mosaic_loop_event(const SDL_Event *event,SDL_AudioDeviceID device,
     TsMosaicRange range=ui->mosaic->loop_range;
     double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale;
     if(motion) {
-        snprintf(ui->status,sizeof(ui->status),"RULER: SHIFT DRAG RANGE / DOUBLE CLICK TIMES / L LOOP");return 1;
+        snprintf(ui->status,sizeof(ui->status),"RULER: SHIFT DRAG RANGE / ALT SNAP EDGES / DOUBLE CLICK TIMES / L LOOP");return 1;
     }
     if(down && event->button.button==SDL_BUTTON_RIGHT && range.end>range.start &&
        time>=range.start-4/ui->mosaic_scale && time<=range.end+4/ui->mosaic_scale) {
@@ -156,8 +180,9 @@ static int mosaic_loop_event(const SDL_Event *event,SDL_AudioDeviceID device,
     }
     if((mod&KMOD_SHIFT) || handle) {
         ui->mosaic_loop_drag=(mod&KMOD_SHIFT)?1:handle;c->loop_epoch=ui->mosaic->epoch;
-        c->loop_anchor=fmax(0,fmin(1000000,time));
+        c->loop_anchor=c->loop_pointer=fmax(0,fmin(1000000,time));
         ui->mosaic_loop_preview=ui->mosaic_loop_drag==1?(TsMosaicRange){c->loop_anchor,c->loop_anchor}:range;
+        mosaic_loop_preview_update(ui,c,(mod&KMOD_ALT)!=0);
         return 1;
     }
     return 0;

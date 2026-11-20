@@ -100,18 +100,28 @@ static void test_mosaic_array(SDL_Window *window)
     for(int i=5;i<15;++i)assert(fabs(m->events[i].start-(.2+(i-5)*.1))<1e-12 && m->events[i].duration==3 && m->events[i].x==988);
     assert(m->loop_range.start==.2 && m->loop_range.end==1.2);
     key(window,SDLK_z,KMOD_CTRL);assert(ts_mosaic_hash(m)==before);
-    /* Count + grid works without a time selection, anchored at the original
-       right-click time. The chosen grid is local to the array dialog. */
+    /* Count + grid captures the real playhead, regardless of pointer location
+       or a stale UI snapshot. Its first card stays there even when it is between
+       the array's grid divisions and playback advances while the dialog opens. */
     assert(ts_mosaic_set_loop_range(m,0,0));before=ts_mosaic_hash(m);
+    m->time=4.125;ui.mosaic_time=12.34;
     array_open_menu(window,610,330);assert(ui.mosaic_array_mode==0);
+    assert(ui.mosaic_array_time==4.125);m->time=5.5;
     click(window,190,130,1);array_text(window,"0");key(window,SDLK_RETURN,KMOD_NONE);
     assert(ui.mosaic_array_open && strstr(ui.mosaic_array_status,"COUNT MUST BE") && ts_mosaic_hash(m)==before);
     array_text(window,"6");click(window,450,130,1);array_text(window,"3");
     click(window,120,175,1);click(window,330,220,1);key(window,SDLK_RETURN,KMOD_NONE);
     assert(!ui.mosaic_array_open && clipboard_card_count(m)==11);
-    for(int i=5;i<11;++i)assert(m->events[i].start==13.25+(i-5)*.75);
+    for(int i=5;i<11;++i)assert(m->events[i].start==4.125+(i-5)*.75);
+    assert(m->time==5.5);
     assert(m->grid.division==64 && !m->loop_range.end);
     key(window,SDLK_z,KMOD_CTRL);assert(ts_mosaic_hash(m)==before);
+    /* Free playhead placement is exact with GRID off, too, and scroll/menu
+       position never substitutes its timeline coordinate for the playhead. */
+    m->grid.enabled=0;m->time=.37;ui.mosaic_scroll=200;
+    array_open_menu(window,610,330);click(window,190,130,1);array_text(window,"1");key(window,SDLK_RETURN,KMOD_NONE);
+    assert(clipboard_card_count(m)==6 && m->events[5].start==.37 && m->time==.37);
+    key(window,SDLK_z,KMOD_CTRL);ui.mosaic_scroll=0;m->grid.enabled=1;
     /* Every rejection preserves the entire scene, selection and undo cursor. */
     assert(ts_mosaic_set_loop_range(m,0,60));before=ts_mosaic_hash(m);history=m->history_cursor;
     mosaic_selection_repair(&ui);uint64_t primary=ui.mosaic_selected;array_menu(window,610,330);

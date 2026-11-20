@@ -41,7 +41,7 @@ static int mosaic_array_sources(SDL_AudioDeviceID device,TsUiState *ui,
         snprintf(ui->status,sizeof(ui->status),"GRID STEPS MUST BE 1 TO 1000000");return 0;
     }
     double grid=ts_mosaic_grid_step(ui->mosaic_array_grid,ui->mosaic_grid_quarter);
-    double first=mode==2?range.start:ceil((mode?range.start:ui->mosaic_array_time)/grid-1e-9)*grid;
+    double first=mode==0?ui->mosaic_array_time:mode==2?range.start:ceil(range.start/grid-1e-9)*grid;
     double step=mode==2?(range.end-range.start)/quantity:grid*steps;
     double rows=mode==1?ceil((range.end-first)/step-1e-9):(double)quantity;
     if(rows<1) {snprintf(ui->status,sizeof(ui->status),"NO GRID STARTS INSIDE THE TIME RANGE");return 0;}
@@ -103,10 +103,12 @@ done:
 
 static void mosaic_array_close(TsUiState *ui)
 {ui->mosaic_array_open=0;SDL_StopTextInput();}
-static void mosaic_array_open(TsUiState *ui,const MosaicController *c)
+static void mosaic_array_open(SDL_AudioDeviceID device,TsUiState *ui,const MosaicController *c)
 {
+    if(device)SDL_LockAudioDevice(device);
     ui->mosaic_array_epoch=ui->mosaic->epoch;ui->mosaic_array_range=ui->mosaic->loop_range;
-    ui->mosaic_array_time=ui->mosaic_scroll+(c->hover_y-66)/(ui->mosaic_scale>0?ui->mosaic_scale:24);
+    ui->mosaic_array_time=ui->mosaic->time;
+    if(device)SDL_UnlockAudioDevice(device);
     ui->mosaic_array_x=ui->mosaic_xscroll+(c->hover_x-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1);
     ui->mosaic_array_grid=ui->mosaic->grid;ui->mosaic_array_grid.enabled=1;
     ui->mosaic_array_mode=ui->mosaic_array_range.end>ui->mosaic_array_range.start?1:0;

@@ -26,14 +26,14 @@ static void mosaic_array_overlay(TsFramebuffer *fb,const TsUiState *ui)
     }
     char label[100];double quantity=strtod(ui->mosaic_array_count,NULL),steps=strtod(ui->mosaic_array_steps,NULL);
     double grid=ts_mosaic_grid_step(ui->mosaic_array_grid,ui->mosaic_grid_quarter);
-    double first=mode==2?ui->mosaic_array_range.start:
-        ceil((mode?ui->mosaic_array_range.start:ui->mosaic_array_time)/grid-1e-9)*grid;
+    double first=mode==0?ui->mosaic_array_time:mode==2?ui->mosaic_array_range.start:
+        ceil(ui->mosaic_array_range.start/grid-1e-9)*grid;
     double spacing=mode==2?(quantity>0?(ui->mosaic_array_range.end-ui->mosaic_array_range.start)/quantity:0):grid*steps;
     double rows=mode==1?(spacing>0?fmax(0,ceil((ui->mosaic_array_range.end-first)/spacing-1e-9)):0):quantity;
     snprintf(label,sizeof(label),"%.0F COPIES X %d SOURCES = %.0F CARDS / %.5GS APART",rows,ui->mosaic_array_sources,rows*ui->mosaic_array_sources,spacing);
     text(fb,110,268,label,ink,1);
     if(mode)snprintf(label,sizeof(label),"RANGE %.4G - %.4G S / FULL CARD LENGTHS KEPT",ui->mosaic_array_range.start,ui->mosaic_array_range.end);
-    else snprintf(label,sizeof(label),"START %.5G S AT CLICK / FULL CARD LENGTHS KEPT",first);
+    else snprintf(label,sizeof(label),"START %.5G S AT PLAYHEAD / FULL CARD LENGTHS KEPT",first);
     text(fb,110,282,label,dim,1);
     if(ui->mosaic_array_status[0]) {
         snprintf(label,sizeof(label),"%.70s",ui->mosaic_array_status);text(fb,110,298,label,ink,1);

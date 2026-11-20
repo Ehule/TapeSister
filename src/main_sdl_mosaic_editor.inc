@@ -39,7 +39,7 @@ struct MosaicController {
     int scatter_layout_touched;
     int zoom_saved;
     double zoom_scroll, zoom_xscroll, zoom_scale, zoom_hscale;
-    double loop_anchor;
+    double loop_anchor, loop_pointer;
     uint64_t loop_epoch;
     int pan_active, pan_moved, pan_x, pan_y;
     int hover_valid, hover_x, hover_y;
