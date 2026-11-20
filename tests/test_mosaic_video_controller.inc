@@ -36,6 +36,7 @@ static void test_mosaic_video_controller(SDL_Window *window)
     assert(dispatch(&right,window));assert(ui.mosaic_video_open && ui.mosaic_video_id==id);
     click(window,450,315,1);assert(!ui.mosaic_video_open);
     right.button.x=500;right.button.y=300;assert(dispatch(&right,window));
+    assert(ui.mosaic_context_open);click(window,ui.mosaic_context_x+20,ui.mosaic_context_y+2+6*24+10,1);
     assert(ui.mosaic_video_open && !ui.mosaic_video_id && ui.mosaic_video_time==234.0/24);click(window,450,315,1);
     assert(!mosaic_enter(0,&audio,&ui,&instrument,&mosaic,0));
     /* Folder picking and cancellation must also preserve the originating workspace. */

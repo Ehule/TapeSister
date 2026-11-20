@@ -634,7 +634,7 @@ typedef struct {
     TsMosaicRecordPreview mosaic_live_preview;
     uint32_t mosaic_live_rate;
     int mosaic_marker_selected, mosaic_marker_open, mosaic_marker_field;
-    int mosaic_marker_range_pending;
+    int mosaic_marker_range_pending; /* 0: none, 1: cue section, 2: explicit marker span. */
     int mosaic_marker_drag, mosaic_views_open;
     double mosaic_marker_preview;
     char mosaic_marker_name[32], mosaic_marker_time[32], mosaic_marker_status[80];
@@ -645,6 +645,12 @@ typedef struct {
     int mosaic_grid_open;
     TsMosaicGrid mosaic_grid_edit;
     double mosaic_grid_quarter;
+    int mosaic_array_open, mosaic_array_mode, mosaic_array_field, mosaic_array_sources;
+    uint64_t mosaic_array_epoch;
+    double mosaic_array_time, mosaic_array_x;
+    TsMosaicRange mosaic_array_range;
+    TsMosaicGrid mosaic_array_grid;
+    char mosaic_array_count[12], mosaic_array_steps[12], mosaic_array_status[160];
     int mosaic_video_open;uint64_t mosaic_video_id,mosaic_video_epoch;
     double mosaic_video_time,mosaic_video_x;
     int mosaic_spacing_confirm, mosaic_scatter_open, mosaic_scatter_copies;

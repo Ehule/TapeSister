@@ -37,9 +37,7 @@ static int mosaic_navigation_event(const SDL_Event *event,SDL_AudioDeviceID devi
             }
             if(up) {
                 if(!c->pan_moved) {
-                    if(device)SDL_LockAudioDevice(device);
-                    ts_mosaic_seek(ui->mosaic,c->pan_scroll+(c->pan_y-66)/c->pan_scale);
-                    if(device)SDL_UnlockAudioDevice(device);
+                    mosaic_grid_seek(device,ui,c->pan_scroll+(c->pan_y-66)/c->pan_scale);
                 }
                 c->pan_active=c->pan_moved=0;
             }

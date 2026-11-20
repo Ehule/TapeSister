@@ -85,7 +85,6 @@ static int mosaic_canvas_file_operation(SDL_AudioDeviceID device,AudioState *aud
             if(active) {
                 /* ui->mosaic still owns the old pins until cleanup finishes. */
                 mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);
-                if(c->clipboard_epoch==ui->mosaic->epoch && c->clipboard.source && c->clipboard.source->pins)--c->clipboard.source->pins;
                 for(int i=0;i<256;++i)if(c->pattern_sources[i] && c->pattern_sources[i]->pins)--c->pattern_sources[i]->pins;
                 runtime_mosaic_sources_clear_selection(audio);
                 mosaic_controller_free(c);c->pages=pages;ui->mosaic=imported.scene;
