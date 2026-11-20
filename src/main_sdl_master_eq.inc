@@ -41,7 +41,7 @@ static void master_eq_spectrum_tick(AudioState *audio,TsUiState *ui,int visible,
     int enabled=!ui->canvas_eq_open && visible && ts_ui_master_eq_visible(ui) && !ui->master_eq_spectrum_off;
     unsigned was_enabled=atomic_load_explicit(&s->request,memory_order_relaxed)&1u;
     unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
-    ui->master_eq_rate=rate;
+    if(!ui->canvas_eq_open)ui->master_eq_rate=rate;
     ts_eq_spectrum_enable(s,enabled);
     if(!enabled && !was_enabled && !ui->master_eq_spectrum.valid)return;
     Uint32 elapsed=now-ui->master_eq_spectrum_tick;

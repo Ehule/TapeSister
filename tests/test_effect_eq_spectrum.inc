@@ -64,12 +64,12 @@ static void effect_eq_observation(void)
         ts_matrix_effects_free(&observed);ts_matrix_effects_free(&reference);
     }
 }
-static void original_board_eq_observation(void)
+static void original_board_eq_observation_at(uint8_t placement)
 {
     static TsSisterPostFxEngine observed,reference;static TsEqSpectrum capture[TS_SISTER_FX_LOCATION_COUNT];
     TsSisterFxControls c;ts_sister_fx_controls_default(&c);c.slot_count=1;
     for(int i=0;i<TS_SISTER_FX_SLOT_COUNT;++i)c.slot[i]=ts_sister_fx_empty_slot();
-    c.slot[0].type=TS_SISTER_FX_EQ;c.slot[0].id=71;c.slot[0].enabled=1;c.slot[0].mix=1;c.slot[0].placement=TS_SISTER_FX_PLACE_HEADS;
+    c.slot[0].type=TS_SISTER_FX_EQ;c.slot[0].id=71;c.slot[0].enabled=1;c.slot[0].mix=1;c.slot[0].placement=placement;
     ts_master_eq_default(&c.slot[0].eq);c.slot[0].eq.enabled=1;
     assert(ts_sister_post_fx_init(&observed,48000) && ts_sister_post_fx_init(&reference,48000));
     ts_sister_post_fx_sync_controls(&observed,&c);ts_sister_post_fx_sync_controls(&reference,&c);
@@ -95,4 +95,10 @@ static void original_board_eq_observation(void)
     ts_eq_spectrum_combine(&combined,views,TS_SISTER_FX_LOCATION_COUNT,48000);assert(combined.valid);
     for(int i=0;i<TS_EQ_SPECTRUM_POINTS;++i)for(int j=0;j<TS_SISTER_FX_LOCATION_COUNT;++j)assert(combined.db[i]>=views[j].db[i]-.001f);
     ts_sister_post_fx_free(&observed);ts_sister_post_fx_free(&reference);
+}
+static void original_board_eq_observation(void)
+{
+    original_board_eq_observation_at(TS_SISTER_FX_PLACE_PRE);
+    original_board_eq_observation_at(TS_SISTER_FX_PLACE_HEADS);
+    original_board_eq_observation_at(TS_SISTER_FX_PLACE_POST);
 }

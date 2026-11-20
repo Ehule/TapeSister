@@ -16,6 +16,9 @@ static void eq_spectrum_button(void)
 }
 static void eq_live_spectrum_ui(void)
 {
+    ui.canvas_eq_open=1;ui.master_eq_rate=8000;
+    master_eq_spectrum_tick(&audio,&ui,1,900);assert(ui.master_eq_rate==8000);
+    ui.canvas_eq_open=0;
     static TsMatrixControls c;ts_matrix_default(&c);
     int first=ts_matrix_effect_add(&c,TS_MATRIX_FX_EQ),other=ts_matrix_effect_add(&c,TS_MATRIX_FX_EQ);
     int board=ts_matrix_effect_add(&c,TS_MATRIX_FX_PEDALBOARD);
