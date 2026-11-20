@@ -38,6 +38,19 @@ not an overall output meter. Low sample rates take longer to gather a full frame
 the main window suspends capture and analysis. Reopening starts a fresh capture.
 Spectrum display state is temporary and does not change saved EQ settings.
 
+Standalone **FX Canvas EQ** cards and EQ slots in both the original pedalboard
+and independent canvas pedalboards also show a live **POST EQ / DBFS** spectrum.
+It measures that card or child's output, before the next effect in its chain.
+**SPEC ON/OFF** is available in their EQ editor. Reordering slots preserves the
+observed child identity; switching EQs starts a fresh capture. Closing, hiding,
+or minimizing the EQ window suspends observation, while minimizing the main
+workspace alone leaves a visible EQ editor updating.
+
+An original-pedalboard EQ assigned to multiple heads combines their spectral
+power. Each head is captured separately, so different audio paths cannot be
+interleaved into a false frequency trace. Analysis runs on the UI thread at
+10 Hz; the audio thread only copies bounded captures for the visible editor.
+
 ![Live post-EQ spectrum with the filter response](images/master-eq-spectrum.png)
 
 **PRESETS** opens eight starting shapes. Selecting one enables EQ, clears band

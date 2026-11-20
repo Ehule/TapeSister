@@ -139,7 +139,7 @@ static void master_eq_render_impl(TsFramebuffer *fb,const TsUiState *ui)
     else snprintf(label,sizeof(label),"PRESET: %s",ts_master_eq_preset_name(ts_master_eq_preset_match(c)));
     text(fb,20,62,label,c->solo_band?amber:muted,1);
     button(fb,224,44,78,"PRESETS",ui->master_eq_presets_open);
-    if(!ui->canvas_eq_open && !ui->effect_eq_open)button(fb,312,44,76,ui->master_eq_spectrum_off?"SPEC OFF":"SPEC ON",!ui->master_eq_spectrum_off);
+    if(!ui->canvas_eq_open)button(fb,312,44,76,ui->master_eq_spectrum_off?"SPEC OFF":"SPEC ON",!ui->master_eq_spectrum_off);
     button(fb,396,44,78,c->enabled?"EQ ON":"EQ BYPASS",c->enabled);
     button(fb,484,44,96,ui->master_eq_reset_pending?"CONFIRM RESET":"RESET EQ",ui->master_eq_reset_pending);
     button(fb,596,44,24,"X",0);

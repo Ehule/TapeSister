@@ -5,6 +5,7 @@ static struct {
     TsUiState *model;Uint32 id,return_id,painted;int visible,source;
     uint32_t node,child;TsMosaic *context;uint64_t epoch;
     MatrixSnapshot *before;
+    TsEqSpectrumView spectrum[TS_SISTER_FX_LOCATION_COUNT];
 } eq_editor;
 static void eq_editor_hide(void)
 {
@@ -53,10 +54,14 @@ static void eq_editor_open(SDL_AudioDeviceID device,AudioState *audio,TsUiState 
     eq_editor.context=ui->mosaic_gallery?ui->mosaic_gallery->root:ui->mosaic;
     eq_editor.epoch=eq_editor.context?eq_editor.context->epoch:0;
     TsUiState *model=eq_editor.model;ts_ui_init(model);model->palette=ui->palette;model->config=ui->config;
-    model->effect_eq_open=source>=0;model->master_eq_spectrum_off=source>=0;
+    model->effect_eq_open=source>=0;model->master_eq_spectrum_off=0;
     model->master_output=ui->master_output;
     master_eq_open(device,audio,model);
     if(device)SDL_LockAudioDevice(device);
+    for(int i=0;i<TS_SISTER_FX_LOCATION_COUNT;++i) {
+        ts_eq_spectrum_enable(&audio->sister.effect_eq_spectrum[i],0);
+        ts_eq_spectrum_clear(&eq_editor.spectrum[i],model->master_eq_rate);
+    }
     TsMasterEqControls *curve=eq_editor_curve(audio,ui);if(curve)model->config.master_eq=*curve;
     if(device)SDL_UnlockAudioDevice(device);
     if(!curve)return;
@@ -157,10 +162,43 @@ static int eq_editor_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID devic
     if(!model->master_eq_open){eq_editor_history_finish(device,audio,pages,bank);eq_editor_hide();editor_return_window(eq_editor.return_id);}
     return 1;
 }
-static void eq_editor_spectrum(AudioState *audio,TsUiState *ui,int visible,Uint32 now)
+static void eq_editor_spectrum(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,int visible,Uint32 now)
 {
-    if(eq_editor.visible && eq_editor.source<0)master_eq_spectrum_tick(audio,eq_editor.model,1,now);
+    TsEqSpectrum *s=audio->sister.effect_eq_spectrum;unsigned mask=0,old_mask=0;
+    TsUiState *model=eq_editor.model;
+    int drawable=eq_editor.visible && window_drawable(eq_editor.window),valid=1;
+    unsigned rate=audio->output_rate>0?(unsigned)audio->output_rate:48000;
+    if(device)SDL_LockAudioDevice(device);
+    if(eq_editor.visible)valid=eq_editor_curve(audio,ui)!=NULL;
+    if(drawable && valid && eq_editor.source>=0 && !model->master_eq_spectrum_off) {
+        if(eq_editor.source==0) {
+            const TsSisterFxControls *fx=&audio->sister.parameters.fx;
+            for(int i=0;i<fx->slot_count;++i)if(fx->slot[i].id==eq_editor.child)mask=fx->slot[i].placement;
+        } else mask=1;
+    }
+    ts_sister_post_fx_observe_eq(&audio->sister.post_fx,eq_editor.child,
+        mask && eq_editor.source==0?s:NULL);
+    ts_matrix_effects_observe_eq(&audio->sister.matrix_effects,eq_editor.node,
+        eq_editor.source==2?eq_editor.child:0,mask && eq_editor.source>0?s:NULL);
+    if(device)SDL_UnlockAudioDevice(device);
+    if(!valid){eq_editor_hide();drawable=0;}
+    if(eq_editor.visible && eq_editor.source<0)master_eq_spectrum_tick(audio,model,drawable,now);
     else master_eq_spectrum_tick(audio,ui,visible,now);
+    for(int i=0;i<TS_SISTER_FX_LOCATION_COUNT;++i) {
+        if(atomic_load_explicit(&s[i].request,memory_order_relaxed)&1u)old_mask|=1u<<i;
+        ts_eq_spectrum_enable(&s[i],(mask&(1u<<i))!=0);
+    }
+    if(!model || (eq_editor.source<0 && !old_mask))return;
+    if(!mask && !old_mask && !model->master_eq_spectrum.valid)return;
+    Uint32 elapsed=now-model->master_eq_spectrum_tick;
+    if(mask!=old_mask || model->master_eq_spectrum.rate!=rate || elapsed>=100) {
+        for(int i=0;i<TS_SISTER_FX_LOCATION_COUNT;++i) {
+            if(!(old_mask&(1u<<i)))ts_eq_spectrum_clear(&eq_editor.spectrum[i],rate);
+            ts_eq_spectrum_poll(&s[i],&eq_editor.spectrum[i],rate,elapsed/1000.f);
+        }
+        ts_eq_spectrum_combine(&model->master_eq_spectrum,eq_editor.spectrum,TS_SISTER_FX_LOCATION_COUNT,rate);
+        model->master_eq_rate=rate;model->master_eq_spectrum_tick=now;
+    }
 }
 static void eq_editor_paint(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui)
 {

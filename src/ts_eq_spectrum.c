@@ -51,6 +51,18 @@ static void fft(float *re,float *im)
         }
     }
 }
+void ts_eq_spectrum_combine(TsEqSpectrumView *out,const TsEqSpectrumView *views,unsigned count,unsigned rate)
+{
+    ts_eq_spectrum_clear(out,rate);
+    for(unsigned j=0;j<count;++j)if(views[j].valid && views[j].rate==rate)out->valid=1;
+    for(int i=0;i<TS_EQ_SPECTRUM_POINTS;++i) {
+        double power=0;
+        for(unsigned j=0;j<count;++j)if(views[j].valid && views[j].rate==rate &&
+            isfinite(views[j].db[i]) && views[j].db[i]>TS_EQ_SPECTRUM_FLOOR_DB)
+            power+=pow(10,views[j].db[i]*.1);
+        if(power>0)out->db[i]=(float)fmax(TS_EQ_SPECTRUM_FLOOR_DB,10*log10(power));
+    }
+}
 int ts_eq_spectrum_poll(TsEqSpectrum *s,TsEqSpectrumView *v,unsigned rate,float elapsed)
 {
     unsigned request=atomic_load_explicit(&s->request,memory_order_acquire);

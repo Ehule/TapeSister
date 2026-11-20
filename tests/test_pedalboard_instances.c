@@ -250,5 +250,6 @@ static void cycle_every_board(void)
     }
     ts_matrix_effects_free(&engines);
 }
+#include "test_effect_eq_spectrum.inc"
 int main(void)
-{codec();capacity_and_sleep();cycle_every_board();spans_and_instances();matrix_span_aliasing();nested_sunvox();retained_children();child_profile();puts("pedalboard instances: codecs, 320 children, isolation, sleep and span parity passed");return 0;}
+{codec();capacity_and_sleep();cycle_every_board();spans_and_instances();matrix_span_aliasing();nested_sunvox();retained_children();child_profile();effect_eq_observation();original_board_eq_observation();puts("pedalboard instances: codecs, 320 children, isolation, sleep, span parity and live EQ observation passed");return 0;}

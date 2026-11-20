@@ -595,6 +595,7 @@ void ts_sister_runtime_init(TsSisterRuntime *runtime)
     ts_master_eq_init(&runtime->master_eq);
     ts_compressor_init(&runtime->compressor);
     ts_eq_spectrum_init(&runtime->eq_spectrum);
+    for(int i=0;i<TS_SISTER_FX_LOCATION_COUNT;++i)ts_eq_spectrum_init(&runtime->effect_eq_spectrum[i]);
     ts_router_init(&runtime->router);
     ts_mandala_default(&runtime->mandala);
     ts_matrix_effects_init(&runtime->matrix_effects);
