@@ -240,6 +240,7 @@ typedef struct {
     TsMasterEq master_eq;
     TsCompressor compressor;
     TsEqSpectrum eq_spectrum;
+    TsEqSpectrum effect_eq_spectrum[TS_SISTER_FX_LOCATION_COUNT];
     TsRouter router;
     TsRoutingMatrix matrix;
     TsMatrixEffects matrix_effects;

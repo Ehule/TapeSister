@@ -18,7 +18,11 @@ typedef struct {
     unsigned mod_mask,mod_remaining,mod_targets;
     unsigned char mod_order[TS_MATRIX_EFFECT_CAPACITY];unsigned mod_count;
     double mod_quarter;uint32_t transport_serial;
+    TsEqSpectrum *eq_spectrum;
+    uint32_t eq_spectrum_node,eq_spectrum_child;
 } TsMatrixEffects;
+/* Publish under audio exclusion. Child zero observes a standalone EQ card. */
+void ts_matrix_effects_observe_eq(TsMatrixEffects *,uint32_t,uint32_t,TsEqSpectrum *);
 typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];struct TsMatrixModulation *modulation[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;TsSunVoxBatch *worker;TsPedalboardPlan board[TS_MATRIX_EFFECT_CAPACITY];} TsMatrixEffectPlan;
 void ts_matrix_effects_init(TsMatrixEffects *fx);
 void ts_matrix_effects_free(TsMatrixEffects *fx);
