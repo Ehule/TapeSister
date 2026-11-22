@@ -73,7 +73,7 @@ static void edit_controls(void)
     assert(fx_canvas.properties && fx_canvas.properties_wires.count==1 && !fx_canvas.properties_count);
     fx_canvas.properties_color=fx_swatch(10);key(SDLK_RETURN,0);
     assert(fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1)==fx_swatch(10));view_codec();
-    key(SDLK_z,KMOD_CTRL);assert(!fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1));
+    key(SDLK_z,KMOD_CTRL);assert(fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1)==fx_source_color(instance(id[0])->row));
     key(SDLK_y,KMOD_CTRL);assert(fx_wire_color(instance(id[0])->row,TS_MATRIX_EFFECT_BASE+1)==fx_swatch(10));
     key(SDLK_z,KMOD_CTRL);fx_clear_wires();fx_select(instance(id[0]),0);fx_select(instance(id[1]),1);
     int undo=w->history_cursor;pointer(SDL_MOUSEMOTION,450,190,0,0);key(SDLK_g,0);assert(fx_modal());

@@ -76,7 +76,7 @@ static void palette_window_navigate(SDL_Window *main,SDL_AudioDeviceID device,
     ui->router_open=0;
     if(ui->midi_learn_active && group!=TS_THEME_MIDI)midi_learn_set_active(ui,sister,0);
     if(group==TS_THEME_EQ) {
-        if(!ui->master_eq_open)master_eq_open(device,audio,ui);
+        eq_editor_open(device,audio,ui,-1,0,0,SDL_GetWindowID(main));goto shown;
     } else if(group==TS_THEME_MOSAIC) {
         if(ui->fm_open){mosaic->fm_owner=mosaic->active;mosaic->fm_epoch=ui->mosaic->epoch;workspace_park_fm(ui,mosaic);}
         ui->tracker_open=0;ui->mosaic_open=1;mosaic_drag_end(ui,mosaic);

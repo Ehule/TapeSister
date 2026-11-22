@@ -78,4 +78,11 @@ void ts_master_eq_set_normalized(TsEqBand *band, int control, float value, unsig
 /* Shared explicit text extension for INI/session and project sidecars. */
 int ts_master_eq_write(FILE *file, const TsMasterEqControls *c);
 int ts_master_eq_read(TsMasterEqControls *c, const char *key, const char *value);
+/* Shared allocation-free EQ insert for native slots and Matrix cards. */
+typedef struct { TsMasterEq dsp; float mix,gain,gain_db,target_gain; } TsEffectEq;
+void ts_effect_eq_init(TsEffectEq *,unsigned);
+TsStereoFrame ts_effect_eq_process(TsEffectEq *,const TsMasterEqControls *,TsStereoFrame,float,float,float,float *);
+int ts_eq_curve_valid(const TsMasterEqControls *);
+int ts_eq_curve_write(FILE *,const char *,const TsMasterEqControls *);
+int ts_eq_curve_read(TsMasterEqControls *,const char *);
 #endif

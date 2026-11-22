@@ -26,12 +26,12 @@ struct TsMatrixEffectNode {
    IDs survive project saves; this process-local generation must not. */
 static atomic_uint_least64_t profile_generation;
 static TsSisterFxType pedal_type(int type)
-{return type==TS_MATRIX_FX_AUTOPAN?TS_SISTER_FX_AUTOPAN:type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:(TsSisterFxType)type;}
+{return type==TS_MATRIX_FX_EQ?TS_SISTER_FX_EQ:type==TS_MATRIX_FX_AUTOPAN?TS_SISTER_FX_AUTOPAN:type==TS_MATRIX_FX_FILTER?TS_SISTER_FX_FILTER:type==TS_MATRIX_FX_DISPERSION?TS_SISTER_FX_DISPERSION:type==TS_MATRIX_FX_RESONATOR?TS_SISTER_FX_RESONATOR:(TsSisterFxType)type;}
 const char *ts_matrix_effect_name(int type)
 {return type==TS_MATRIX_FX_MODULATOR?"MODULATOR":type==TS_MATRIX_FX_PEDALBOARD?"PEDALBOARD":type==TS_MATRIX_FX_SUNVOX?"SUNVOX FX":type==TS_MATRIX_FX_META?"META FX":type==TS_MATRIX_FX_COMPRESSOR?"COMPRESSOR":ts_sister_fx_type_name(pedal_type(type));}
 const char *ts_matrix_effect_short_name(int type)
 {
-    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX","BOARD","MOD","PAN"};
+    static const char *names[]={"EMPTY","REV","DLY","DIST","GRAIN","TRANS","COMP","FILTER","DISP","RESON","META","SUNVOX","BOARD","MOD","PAN","EQ"};
     return type>=0 && type<TS_MATRIX_FX_TYPES?names[type]:"FX";
 }
 void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
@@ -49,6 +49,7 @@ void ts_matrix_effect_default(TsMatrixEffectControls *c,int type,uint32_t id)
         c->a=.25f;c->b=.4f;c->c=0;ts_mod_default(&c->modulation);
         for(unsigned i=0;i<c->modulation.count;++i)c->modulation.lane[i].seed^=id*UINT32_C(0x85ebca6b);
     }
+    if(type==TS_MATRIX_FX_EQ){ts_master_eq_default(&c->eq);c->eq.enabled=1;}
     if(type==TS_MATRIX_FX_AUTOPAN){c->a=ts_autopan_default_rate();c->b=1;c->c=.5f;ts_autopan_settings_default(&c->autopan);}
     if(type==TS_MATRIX_FX_RESONATOR)c->a=.25f;
     ts_character_filter_default(&c->filter);
@@ -63,6 +64,7 @@ int ts_matrix_effect_valid(const TsMatrixEffectControls *c)
         isfinite(c->gain_db) && c->gain_db>=-12 && c->gain_db<=12 &&
         isfinite(c->transition) && c->transition>=0 && c->transition<=1 && ts_compressor_valid(&c->compressor) &&
         ts_transient_states_valid(c->transient_power,&c->transient_states) &&
+        (c->type!=TS_MATRIX_FX_EQ || ts_eq_curve_valid(&c->eq)) &&
         (c->type!=TS_MATRIX_FX_AUTOPAN || ts_autopan_settings_valid(&c->autopan)) &&
         (c->type!=TS_MATRIX_FX_FILTER || ts_character_filter_valid(&c->filter)) &&
         (c->type!=TS_MATRIX_FX_META || ts_meta_valid(&c->meta)) &&
@@ -94,7 +96,7 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
         }
     } else {
         TsSisterFxSlotControls slot={pedal_type(c->type),1,TS_SISTER_FX_PLACE_POST,c->gain_db,c->a,c->b,c->c,c->mix,0};
-        slot.autopan=c->autopan;slot.filter=c->filter;slot.transient_power=c->transient_power;slot.transient_states=c->transient_states;
+        slot.eq=c->eq;slot.autopan=c->autopan;slot.filter=c->filter;slot.transient_power=c->transient_power;slot.transient_states=c->transient_states;
         ts_sister_single_fx_set(n->pedal,&slot);
     }
 }

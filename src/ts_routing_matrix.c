@@ -353,6 +353,7 @@ int ts_matrix_write(FILE *f,const TsMatrixControls *c)
         if(v->type==TS_MATRIX_FX_META){snprintf(key,sizeof(key),"Matrix.Meta%d",i);if(!ts_meta_write(f,key,&v->meta))return 0;}
         if(v->type==TS_MATRIX_FX_PEDALBOARD){snprintf(key,sizeof(key),"Matrix.Board%d",i);if(!ts_pedalboard_write(f,key,&v->board))return 0;}
         if(v->type==TS_MATRIX_FX_MODULATOR){snprintf(key,sizeof(key),"Matrix.Mod%d",i);if(!ts_mod_write(f,key,&v->modulation))return 0;}
+        if(v->type==TS_MATRIX_FX_EQ){snprintf(key,sizeof(key),"Matrix.Eq%d",i);if(!ts_eq_curve_write(f,key,&v->eq))return 0;}
         if(v->type==TS_MATRIX_FX_AUTOPAN){snprintf(key,sizeof(key),"Matrix.AutoPan%d",i);if(!ts_autopan_write(f,key,&v->autopan))return 0;}
         if(v->type==TS_MATRIX_FX_FILTER){snprintf(key,sizeof(key),"Matrix.Filter%d",i);if(!ts_character_filter_write(f,key,&v->filter))return 0;}
     }
@@ -395,6 +396,8 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         if(ts_mod_read(&next.effect[n].modulation,key+used,v)!=1)return -1;
     } else if(sscanf(key,"Meta%d.%n",&n,&used)==1 && used>0 && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
         if(ts_meta_read(&next.effect[n].meta,key+used,v)!=1)return -1;
+    } else if(sscanf(key,"Eq%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
+        if(!ts_eq_curve_read(&next.effect[n].eq,v))return -1;
     } else if(sscanf(key,"AutoPan%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
         if(!ts_autopan_read(&next.effect[n].autopan,v))return -1;
     } else if(sscanf(key,"Filter%d%n",&n,&used)==1 && !key[used] && n>=0 && n<TS_MATRIX_EFFECT_CAPACITY) {
@@ -424,6 +427,7 @@ int ts_matrix_read(TsMatrixControls *c,const char *key,const char *v)
         if(pending_board)ts_pedalboard_default(&e.board);
         e.modulation=next.effect[n].modulation;int pending_mod=e.type==TS_MATRIX_FX_MODULATOR && !e.modulation.initialized;
         if(pending_mod)ts_mod_default(&e.modulation);
+        e.eq=next.effect[n].eq;if(e.type==TS_MATRIX_FX_EQ && !ts_eq_curve_valid(&e.eq)){ts_master_eq_default(&e.eq);e.eq.enabled=1;}
         e.autopan=next.effect[n].autopan;if(e.type==TS_MATRIX_FX_AUTOPAN && !e.autopan.initialized)ts_autopan_settings_default(&e.autopan);
         e.filter=next.effect[n].filter;if(!e.filter.initialized)ts_character_filter_default(&e.filter);
         e.transient_power=next.effect[n].transient_power;e.transient_states=next.effect[n].transient_states;

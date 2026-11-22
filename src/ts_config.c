@@ -712,7 +712,7 @@ int ts_config_save(const TsConfig *config, const char *path,
                 "; Final attenuation after the limiter: 0=mute, 100=unity.\n"
                 "master_output_percent=%d\n"
                 "; Default individual Reverb/Delay/Distortion ramp: 10 ms to 60 minutes.\n"
-                "# Pedalboard slots for NEW projects only (5..20). Saved projects retain their count.\n"
+                "# Pedalboard slots for NEW projects only (1..20). Saved projects retain their count.\n"
                 "pedalboard_slots=%d\n"
                 "sister_fx_effect_transition_ms=%d\n"
                 "; Default Master FX gate ramp: 10 ms to 60 minutes.\n"

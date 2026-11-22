@@ -37,6 +37,7 @@ static int slot_valid(const TsSisterFxSlotControls *s)
         unit(s->parameter_a) && unit(s->parameter_b) && unit(s->parameter_c) && unit(s->mix) &&
         s->parameter_locks<=31 && ts_transient_states_valid(s->transient_power,&s->transient_states) &&
         ts_transient_states_valid(0,&s->grain_states) &&
+        (s->type!=TS_SISTER_FX_EQ || ts_eq_curve_valid(&s->eq)) &&
         (s->type!=TS_SISTER_FX_AUTOPAN || ts_autopan_settings_valid(&s->autopan)) &&
         (s->type!=TS_SISTER_FX_FILTER || ts_character_filter_valid(&s->filter)) &&
         (s->type!=TS_SISTER_FX_SUNVOX || ts_sunvox_valid(&s->sunvox));
@@ -279,7 +280,7 @@ void ts_pedalboard_process_aligned(TsPedalboard *b,const TsStereoFrame *in,TsSte
                 atomic_store(&b->remaining[i],left-1);
             } else {ts_pedalboard_slot_span(b->child[i],scratch,gate,scratch,n);ts_pedalboard_slot_dry(b->child[i],reference,reference,n);}
             if(measured){TsPedalboardSlot *v=b->child[i]?b->child[i]:b->previous[i];
-                if(v){TsProfileEffectIdentity id={.generation=v->generation,.id=identity(&b->controls,i),.type=v->controls.type==TS_SISTER_FX_AUTOPAN?TS_MATRIX_FX_AUTOPAN:v->controls.type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->controls.type>=TS_SISTER_FX_FILTER?v->controls.type+1:v->controls.type,.patch=v->controls.sunvox.patch,.quantum=ts_pedalboard_slot_latency(v)};
+                if(v){TsProfileEffectIdentity id={.generation=v->generation,.id=identity(&b->controls,i),.type=v->controls.type==TS_SISTER_FX_EQ?TS_MATRIX_FX_EQ:v->controls.type==TS_SISTER_FX_AUTOPAN?TS_MATRIX_FX_AUTOPAN:v->controls.type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->controls.type>=TS_SISTER_FX_FILTER?v->controls.type+1:v->controls.type,.patch=v->controls.sunvox.patch,.quantum=ts_pedalboard_slot_latency(v)};
                     ts_profile_child_end(b->owner,i,b->board_id,&id,measured,left!=0);}
             }
         }
@@ -312,6 +313,7 @@ int ts_pedalboard_write(FILE *f, const char *prefix, const TsPedalboardControls 
         if(fprintf(f,"%s.Id%d=%u\n",prefix,i,identity(c,i))<0)return 0;
         if (fprintf(f, "%s.Slot%d=%d,%d,%.9g,%.9g,%.9g,%.9g,%.9g,%u\n", prefix, i,
             s->type, s->enabled, s->gain_db, s->parameter_a, s->parameter_b, s->parameter_c, s->mix, s->parameter_locks) < 0) return 0;
+        if(s->type==TS_SISTER_FX_EQ){snprintf(key,sizeof(key),"%s.Eq%d",prefix,i);if(!ts_eq_curve_write(f,key,&s->eq))return 0;}
         if(s->type==TS_SISTER_FX_AUTOPAN){snprintf(key,sizeof(key),"%s.AutoPan%d",prefix,i);if(!ts_autopan_write(f,key,&s->autopan))return 0;}
         if(s->type==TS_SISTER_FX_SUNVOX){snprintf(key,sizeof(key),"%s.SunVox%d",prefix,i);if(!ts_sunvox_write(f,key,&s->sunvox))return 0;}
         snprintf(key, sizeof(key), "%s.Transient%d", prefix, i);
@@ -337,7 +339,7 @@ int ts_pedalboard_read(TsPedalboardControls *c, const char *key, const char *val
 {
     TsPedalboardControls next = *c; int i = -1, used = 0; double v[8];
     if (!strcmp(key, "Header")) {
-        if (!numbers(value, v, 3) || v[0] != 1 || !whole(v[1], 5, 20) || v[2] < 0 || v[2] > 1) return -1;
+        if (!numbers(value, v, 3) || v[0] != 1 || !whole(v[1], TS_SISTER_FX_SLOT_MIN, TS_SISTER_FX_SLOT_COUNT) || v[2] < 0 || v[2] > 1) return -1;
         ts_pedalboard_default(&next); next.initialized = 2; next.count = v[1]; next.transition = v[2];
     } else {
         if (next.initialized != 2) return -1;
@@ -364,6 +366,8 @@ int ts_pedalboard_read(TsPedalboardControls *c, const char *key, const char *val
         } else if (sscanf(key, "Grain%d%n", &i, &used) == 1 && used && !key[used] && i >= 0 && i < next.count) {
             uint8_t power;
             if (!ts_transient_states_read(value, &power, &next.slot[i].grain_states) || power) return -1;
+        } else if (sscanf(key,"Eq%d%n",&i,&used)==1 && used && !key[used] && i>=0 && i<next.count) {
+            if(!ts_eq_curve_read(&next.slot[i].eq,value))return -1;
         } else if (sscanf(key,"AutoPan%d%n",&i,&used)==1 && used && !key[used] && i>=0 && i<next.count) {
             if(!ts_autopan_read(&next.slot[i].autopan,value))return -1;
         } else if (sscanf(key, "Filter%d%n", &i, &used) == 1 && used && !key[used] && i >= 0 && i < next.count) {

@@ -72,8 +72,8 @@ static void reroute_cables(void)
     for(int i=0;i<96;++i) {
         TsSourceRoute expected=original[i];expected.matrix_gain[db]=expected.matrix_gain[dc];expected.matrix_gain[dc]=0;
         assert(!memcmp(&expected,&cards[i]->output_route,sizeof(expected)));
-        assert(fx_wire_selected(rows[i],db)>=0 && !fx_wire_color(rows[i],dc));
-        assert(fx_wire_color(rows[i],db)==(i<95?fx_swatch(i%16):0));
+        assert(fx_wire_selected(rows[i],db)>=0 && fx_wire_color(rows[i],dc)==fx_source_color(rows[i]));
+        assert(fx_wire_color(rows[i],db)==(i<95?fx_swatch(i%16):fx_source_color(rows[i])));
     }
     assert(fx_wire_color(rows[0],out)==fx_swatch(9) && l->cable_count==TS_FX_CABLE_STYLES-1);view_codec();
     MatrixSnapshot *after=mx_snapshot(0,&audio,&pages,&bank);assert(after);

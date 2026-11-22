@@ -143,7 +143,8 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
                 s->model.parameters=sister_board_view(s)->parameters;
                 TsSisterFxControls *fx=&s->model.parameters.fx;
                 if(fx->slot_count>TS_SISTER_FX_SLOT_MIN) {
-                    fx->slot[--fx->slot_count]=ts_sister_fx_empty_slot();
+                    for(int n=0;n<s->model.fx_remove_confirmation && fx->slot_count>TS_SISTER_FX_SLOT_MIN;++n)fx->slot[--fx->slot_count]=ts_sister_fx_empty_slot();
+                    ts_sister_ui_fx_scroll_set(&s->model,s->model.fx_scroll);
                     sister_board_publish(device,audio,ui,s);
                 }
                 s->model.parameters=s->board_id?shared:audio->sister.parameters;s->model.fx_remove_confirmation=0;
@@ -156,7 +157,7 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
         !(e->key.keysym.mod&(KMOD_CTRL|KMOD_ALT|KMOD_GUI)) &&
         (e->key.keysym.sym==SDLK_UP || e->key.keysym.sym==SDLK_DOWN)) {
         s->model.fx_scroll=SDL_clamp(s->model.fx_scroll+(e->key.keysym.sym==SDLK_UP?-1:1),
-            0,sister_board_view(s)->parameters.fx.slot_count-TS_SISTER_UI_FX_VISIBLE);
+            0,SDL_max(0,sister_board_view(s)->parameters.fx.slot_count-TS_SISTER_UI_FX_VISIBLE));
         ts_ui_pointer_drag_cancel(&s->parameter_drag);s->rendered_model_valid=0;return 1;
     }
     int down=e->type==SDL_MOUSEBUTTONDOWN,motion=e->type==SDL_MOUSEMOTION,wheel=e->type==SDL_MOUSEWHEEL;
@@ -196,6 +197,10 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
         mx_bind_mosaic(ui,pages);mx_original(device,audio,pages,bank);board_before=mx_snapshot(device,audio,pages,bank);
         if(board_before)sister_board_preset_recall(device,audio,ui,s,at);
         sister_board_history_finish(device,audio,pages,bank);return 1;
+    }
+    if(hit.action==TS_SISTER_UI_ACTION_FX_ADD_COUNT) {
+        if(wheel)s->model.fx_add_count=SDL_clamp((s->model.fx_add_count>0?s->model.fx_add_count:1)+(int)wheel_event_delta(e,0),1,20);
+        s->rendered_model_valid=0;return 1;
     }
     if(y>=370)return 0;
     if(ui->midi_learn_active) {
@@ -256,14 +261,24 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
         int row=hit.index;
         switch(hit.action) {
         case TS_SISTER_UI_ACTION_FX_ADD:
-            if(fx->slot_count<20){fx->slot[fx->slot_count++]=ts_sister_fx_empty_slot();ts_sister_ui_fx_scroll_set(&s->model,fx->slot_count-5);changed=1;}break;
+            for(int n=0;n<SDL_max(1,s->model.fx_add_count) && fx->slot_count<TS_SISTER_FX_SLOT_COUNT;++n){fx->slot[fx->slot_count++]=ts_sister_fx_empty_slot();changed=1;}
+            ts_sister_ui_fx_scroll_set(&s->model,fx->slot_count-TS_SISTER_UI_FX_VISIBLE);break;
+        case TS_SISTER_UI_ACTION_FX_SLOT_DELETE:
+            if(row>=0 && row<fx->slot_count) {
+                memmove(fx->slot+row,fx->slot+row+1,(fx->slot_count-row-1)*sizeof(*fx->slot));
+                fx->slot[fx->slot_count-1]=ts_sister_fx_empty_slot();
+                if(fx->slot_count>TS_SISTER_FX_SLOT_MIN)--fx->slot_count;
+                ts_sister_ui_fx_scroll_set(&s->model,s->model.fx_scroll);changed=1;character_filter_hide();
+            }break;
         case TS_SISTER_UI_ACTION_FX_REMOVE:
-            if(fx->slot_count>5) {
-                if(fx->slot[fx->slot_count-1].type)s->model.fx_remove_confirmation=1;
-                else {fx->slot[--fx->slot_count]=ts_sister_fx_empty_slot();changed=1;}
+            if(fx->slot_count>TS_SISTER_FX_SLOT_MIN) {
+                int count=SDL_min(SDL_max(1,s->model.fx_add_count),fx->slot_count-TS_SISTER_FX_SLOT_MIN),occupied=0;
+                for(int n=0;n<count;++n)occupied|=fx->slot[fx->slot_count-1-n].type!=TS_SISTER_FX_EMPTY;
+                if(occupied)s->model.fx_remove_confirmation=count;
+                else {for(int n=0;n<count;++n)fx->slot[--fx->slot_count]=ts_sister_fx_empty_slot();changed=1;}
             }break;
         case TS_SISTER_UI_ACTION_FX_REMOVE_CONFIRM:
-            if(s->model.fx_remove_confirmation && fx->slot_count>5){fx->slot[--fx->slot_count]=ts_sister_fx_empty_slot();changed=1;}
+            if(s->model.fx_remove_confirmation && fx->slot_count>TS_SISTER_FX_SLOT_MIN){for(int n=0;n<s->model.fx_remove_confirmation && fx->slot_count>TS_SISTER_FX_SLOT_MIN;++n)fx->slot[--fx->slot_count]=ts_sister_fx_empty_slot();changed=1;}
             s->model.fx_remove_confirmation=0;break;
         case TS_SISTER_UI_ACTION_FX_REMOVE_CANCEL:s->model.fx_remove_confirmation=0;break;
         case TS_SISTER_UI_ACTION_FX_SLOT_TYPE:
@@ -286,6 +301,7 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
                 changed=1;
             }break;}
         case TS_SISTER_UI_ACTION_SUNVOX_EDIT:open_sunvox=row;break;
+        case TS_SISTER_UI_ACTION_EQ_EDIT:eq_editor_open(device,audio,ui,s->board_id?2:0,s->board_id,fx->slot[row].id,s->window_id);break;
         case TS_SISTER_UI_ACTION_AUTOPAN_EDIT:autopan_open(audio,s->board_id?2:0,s->board_id,fx->slot[row].id,0);break;
         case TS_SISTER_UI_ACTION_FILTER_EDIT:
             if(s->board_id){character_filter_matrix_open(s->board_id);character_filter_window.source=2;character_filter_window.slot=row;character_filter_window.child=fx->slot[row].id;}
@@ -295,6 +311,7 @@ static int sister_board_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioS
         }
         s->rendered_model_valid=0;
     }
+    if(changed)ts_sister_ui_fx_scroll_set(&s->model,s->model.fx_scroll);
     if(changed && !sister_board_publish(device,audio,ui,s))open_sunvox=-1;
     if(open_sunvox>=0 && open_sunvox<fx->slot_count) {
         uint32_t child=fx->slot[open_sunvox].id;

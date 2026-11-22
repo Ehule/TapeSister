@@ -9515,6 +9515,7 @@ typedef struct {
 } SisterWindow;
 static void character_filter_open(SisterWindow *,int);
 static void autopan_open(AudioState *,int,uint32_t,uint32_t,int);
+static void eq_editor_open(SDL_AudioDeviceID,AudioState *,TsUiState *,int,uint32_t,uint32_t,Uint32);
 static int sister_stage_fx(SDL_AudioDeviceID device,AudioState *audio,TsSisterFxControls *c,TsSisterSunVoxPlan *plan)
 {
     ts_sister_fx_controls_sanitize(c);
@@ -11377,6 +11378,7 @@ static void sister_fx_slot_select_type(TsSisterFxSlotControls *slot,
     int adding = slot->type == TS_SISTER_FX_EMPTY && type != TS_SISTER_FX_EMPTY;
     slot->type = type;
     switch (type) {
+    case TS_SISTER_FX_EQ:ts_master_eq_default(&slot->eq);slot->eq.enabled=1;break;
     case TS_SISTER_FX_AUTOPAN:
         ts_autopan_settings_default(&slot->autopan);slot->parameter_a=ts_autopan_default_rate();slot->parameter_b=1;slot->parameter_c=.5f;break;
     case TS_SISTER_FX_SUNVOX:
@@ -12400,7 +12402,7 @@ static int midi_source_from_event(const TsMidiEvent *midi,
     return 1;
 }
 
-static int canvas_eq_handling;
+static int canvas_eq_handling,effect_eq_handling;
 #include "main_sdl_master_eq.inc"
 #include "main_sdl_spatial.inc"
 #include "main_sdl_source_route.inc"
@@ -12416,6 +12418,7 @@ static unsigned ts_audio_range_offered(const TsConfig *,int);
 #include "main_sdl_meta_fx.inc"
 #include "main_sdl_modulation.inc"
 #include "main_sdl_board_instances.inc"
+#include "main_sdl_eq_editor.inc"
 
 static int midi_sister_hit_from_target(const char *target, float normalized,
                                        TsSisterUiHit *hit)
@@ -15191,6 +15194,7 @@ int main(int argc, char **argv)
             if(meta_fx_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(gallery_windows_event(&event,device,&audio,&ui,&instrument,&mosaic))continue;
             if(modulation_event(&event,device,&audio,&ui,&sample_pages,&instrument))continue;
+            if(eq_editor_event(&event,window,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(autopan_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(character_filter_event(&event,device,&audio,&ui,&sister_window,&sample_pages,&instrument))continue;
             if(matrix_event(&event,window,device,&audio,&ui,&sample_pages,&instrument))continue;
@@ -19085,7 +19089,7 @@ int main(int argc, char **argv)
         }
         project_refresh_title(window,&ui,&sample_pages,record_bank_active?NULL:&instrument,
             record_bank_active?&instrument:parked_instrument,&audio.sister,&audio.keyboard_sequence,SDL_GetTicks());
-        master_eq_spectrum_tick(&audio,&ui,!window_minimized,SDL_GetTicks());
+        eq_editor_spectrum(&audio,&ui,!window_minimized,SDL_GetTicks());
         if(ui.insert_open)ts_audio_insert_diagnostics(&audio,&ui,0);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
@@ -19213,6 +19217,7 @@ int main(int argc, char **argv)
         speakers_update(device,&audio,&ui);
         canvas_eq_poll(device,&audio,&ui,&instrument);
         character_filter_paint(&audio,&ui,&sister_window);
+        eq_editor_paint(device,&audio,&ui);
         autopan_paint(&ui,&sister_window);
         meta_fx_paint(&ui);
         gallery_windows_paint(&ui);
@@ -19366,7 +19371,7 @@ int main(int argc, char **argv)
     }
     if (sister_window.texture) SDL_DestroyTexture(sister_window.texture);
     if (sister_window.renderer) SDL_DestroyRenderer(sister_window.renderer);
-    character_filter_close();autopan_close();
+    character_filter_close();autopan_close();eq_editor_destroy();
     meta_fx_close();
     gallery_windows_close();
     modulation_close();

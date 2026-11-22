@@ -4,6 +4,7 @@
 #include "tapesister/sample.h"
 #include "tapesister/transient.h"
 #include "tapesister/autopan.h"
+#include "tapesister/master_eq.h"
 #include "tapesister/texture_fx.h"
 #include "tapesister/character_filter.h"
 #include "tapesister/sister_effects.h"
@@ -34,11 +35,12 @@ typedef enum {
     TS_SISTER_FX_RESONATOR,
     TS_SISTER_FX_SUNVOX,
     TS_SISTER_FX_AUTOPAN,
+    TS_SISTER_FX_EQ,
     TS_SISTER_FX_TYPE_COUNT
 } TsSisterFxType;
 
 enum {
-    TS_SISTER_FX_SLOT_MIN = 5,
+    TS_SISTER_FX_SLOT_MIN = 1,
     TS_SISTER_FX_SLOT_DEFAULT = 10,
     TS_SISTER_FX_SLOT_COUNT = 20, /* Storage bound; slot_count is project-owned. */
     TS_SISTER_FX_PLACE_PRE = 1u << 0,
@@ -86,6 +88,7 @@ typedef struct {
     uint32_t id; /* Saved identity; follows the processor when slots reorder. */
     TsSunVoxControls sunvox;
     TsAutoPanSettings autopan;
+    TsMasterEqControls eq;
 } TsSisterFxSlotControls;
 
 typedef struct {
@@ -369,6 +372,7 @@ typedef struct {
     TsSisterTransientState
         transient[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsCharacterFilter filter[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
+    TsEffectEq eq[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsAutoPan autopan[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsDispersion dispersion[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];
     TsResonator resonator[TS_SISTER_FX_SLOT_COUNT][TS_SISTER_FX_LOCATION_COUNT];

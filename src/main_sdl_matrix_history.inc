@@ -1,6 +1,6 @@
 /* UI-owned bounded history. Stable IDs keep deleted/reordered cards and tiles
    from redirecting old edits onto unrelated objects. No DSP histories are copied. */
-typedef struct { MatrixRow row;TsSourceRoute route; } MatrixSavedRoute;
+typedef struct { MatrixRow row;TsSourceRoute route;char name[64];uint32_t color;int muted,solo; } MatrixSavedRoute;
 struct MatrixSnapshot {
     TsMatrixControls controls;TsRouterControls router;TsSpatialControls spatial;
     TsCompressorControls compressor;FxProcessorState fixed;
@@ -38,8 +38,11 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
     }
     for(int c=0;c<mx_scene_count();++c) {
         TsMosaic *m=mx_scene_at(c);if(!m)continue;
-        for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id)
-            s->routes[s->count++]=(MatrixSavedRoute){.row={.kind=3,.index=i,.tile=m->events[i].id,.canvas=mx_scene_id(c)},.route=m->events[i].output_route};
+        for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id) {
+            const TsMosaicEvent *e=&m->events[i];MatrixSavedRoute *r=&s->routes[s->count++];
+            *r=(MatrixSavedRoute){.row={.kind=3,.index=i,.tile=e->id,.canvas=mx_scene_id(c)},.route=e->output_route,.color=e->color,.muted=e->muted,.solo=e->solo};
+            memcpy(r->name,e->name,sizeof(r->name));
+        }
     }
     return s;
 }
@@ -81,7 +84,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
         else if(v.row.kind==1) {
             TsBankSlot *tile=mx_tile(pages,bank,v.row.tile);
             if(tile){tile->output_route=v.route;source_route_update_voices(audio,v.row.tile,v.route);}
-        } else {TsMosaicEvent *e=mx_card(v.row);if(e){e->output_route=v.route;++mx_card_scene(v.row)->revision;}}
+        } else {TsMosaicEvent *e=mx_card(v.row);if(e){e->output_route=v.route;memcpy(e->name,v.name,sizeof(e->name));e->color=v.color;e->muted=v.muted;e->solo=v.solo;++e->revision;++mx_card_scene(v.row)->revision;}}
     }
     ts_matrix_effects_commit(&audio->sister.matrix_effects,&controls,(unsigned)audio->output_rate,&plan);
     ts_matrix_set_live(&audio->sister.matrix,&controls,(unsigned)audio->output_rate);

@@ -49,9 +49,9 @@ static void config_and_persistence(void)
     FILE *f=fopen("pedalboard-test.ini","w");assert(f);fputs("pedalboard_slots=99\n",f);fclose(f);
     assert(ts_config_load(&config,"pedalboard-test.ini",error,sizeof(error)) && config.pedalboard_slots==20);
     f=fopen("pedalboard-test.ini","w");assert(f);fputs("PedalboardSlots=2\n",f);fclose(f);
-    assert(ts_config_load(&config,"pedalboard-test.ini",error,sizeof(error)) && config.pedalboard_slots==5);
+    assert(ts_config_load(&config,"pedalboard-test.ini",error,sizeof(error)) && config.pedalboard_slots==2);
     assert(ts_config_save(&config,"pedalboard-test.ini",error,sizeof(error)));
-    assert(ts_config_load(&config,"pedalboard-test.ini",error,sizeof(error)) && config.pedalboard_slots==5);
+    assert(ts_config_load(&config,"pedalboard-test.ini",error,sizeof(error)) && config.pedalboard_slots==2);
     remove("pedalboard-test.ini");
 
     static TsSisterProjectState saved,loaded;
@@ -65,7 +65,7 @@ static void config_and_persistence(void)
     assert(ts_sister_project_state_save_file(&saved,"pedalboard-state.ini",error,sizeof(error)));
     int present=0;
     assert(ts_sister_project_state_load_file(&loaded,"pedalboard-state.ini",48000,&present,error,sizeof(error)) && present);
-    assert(loaded.parameters.fx.slot_count==20 && config.pedalboard_slots==5);
+    assert(loaded.parameters.fx.slot_count==20 && config.pedalboard_slots==2);
     for(int i=0;i<20;++i) {
         assert(loaded.parameters.fx.slot[i].type==saved.parameters.fx.slot[i].type);
         assert(loaded.parameters.fx.slot[i].parameter_a==saved.parameters.fx.slot[i].parameter_a);
@@ -349,11 +349,11 @@ int main(int argc,char **argv)
     assert(key(SDLK_RETURN));
     assert(!sister.model.fx_remove_confirmation);
     assert(sister.model.parameters.fx.slot_count==19 && sister.model.fx_scroll==14);
-    for(int i=19;i>5;--i)action(TS_SISTER_UI_ACTION_FX_REMOVE);
-    assert(sister.model.parameters.fx.slot_count==5 && sister.model.fx_scroll==0);
-    action(TS_SISTER_UI_ACTION_FX_REMOVE);assert(sister.model.parameters.fx.slot_count==5);
-    assert(ui.config.pedalboard_slots==10 && audio.sister.parameters.fx.slot_count==5);
+    for(int i=19;i>1;--i){action(TS_SISTER_UI_ACTION_FX_REMOVE);if(sister.model.fx_remove_confirmation)assert(key(SDLK_RETURN));}
+    assert(sister.model.parameters.fx.slot_count==1 && sister.model.fx_scroll==0);
+    action(TS_SISTER_UI_ACTION_FX_REMOVE);assert(sister.model.parameters.fx.slot_count==1);
+    assert(ui.config.pedalboard_slots==10 && audio.sister.parameters.fx.slot_count==1);
     SDL_DestroyWindow(sister.window);ts_sister_runtime_free(&audio.sister);ts_instrument_free(&bank);SDL_Quit();
-    puts("Pedalboard: 5..20 counts, INI defaults, project/preset/legacy restore, live DSP continuity, navigation and MIDI locks passed");
+    puts("Pedalboard: 1..20 counts, INI defaults, project/preset/legacy restore, live DSP continuity, navigation and MIDI locks passed");
     return 0;
 }

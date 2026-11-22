@@ -17,6 +17,7 @@ static int fx_natural_compare(const char *a,const char *b)
 }
 static const char *fx_node_title(const FxCanvasNode *n)
 {
+    TsMosaicEvent *source=n->row.kind==3?mx_card(n->row):NULL;if(source)return source->name;
     TsFxCanvasPosition *p=fx_position(n->row,0);if(p && p->name[0])return p->name;
     const TsMatrixEffectControls *c=n->row.kind==4?&matrix_window.controls.effect[ts_matrix_effect_index(n->row.index)]:NULL;
     return c && c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):

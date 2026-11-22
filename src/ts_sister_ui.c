@@ -162,6 +162,7 @@ int ts_sister_ui_fx_scroll(const TsSisterUiModel *model)
 {
     if (!model) return 0;
     int max = ts_sister_fx_slot_count(model->parameters.fx.slot_count) - TS_SISTER_UI_FX_VISIBLE;
+    if(max<0)max=0;
     return model->fx_scroll < 0 ? 0 : model->fx_scroll > max ? max : model->fx_scroll;
 }
 void ts_sister_ui_fx_scroll_set(TsSisterUiModel *model, int first)
@@ -173,6 +174,7 @@ void ts_sister_ui_fx_scroll_set(TsSisterUiModel *model, int first)
 void ts_sister_ui_fx_thumb(const TsSisterUiModel *model, int *top, int *height)
 {
     int count = ts_sister_fx_slot_count(model->parameters.fx.slot_count);
+    if(count<TS_SISTER_UI_FX_VISIBLE)count=TS_SISTER_UI_FX_VISIBLE;
     *height = TS_SISTER_UI_FX_SCROLL_H * TS_SISTER_UI_FX_VISIBLE / count;
     int range = count - TS_SISTER_UI_FX_VISIBLE;
     *top = TS_SISTER_UI_FX_SCROLL_TOP + (range ?
@@ -649,6 +651,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             return hit;
         }
         if (contains(x,y,10,332,28,22)) { hit.action=TS_SISTER_UI_ACTION_FX_REMOVE; return hit; }
+        if (contains(x,y,40,332,32,22)) { hit.action=TS_SISTER_UI_ACTION_FX_ADD_COUNT; return hit; }
         if (contains(x,y,74,332,28,22)) { hit.action=TS_SISTER_UI_ACTION_FX_ADD; return hit; }
         if (contains(x,y,TS_SISTER_UI_FX_SCROLL_X,TS_SISTER_UI_FX_TOP,TS_SISTER_UI_FX_SCROLL_W,240)) {
             hit.action = TS_SISTER_UI_ACTION_FX_SCROLL;
@@ -662,6 +665,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
         int first = ts_sister_ui_fx_scroll(model);
         for (int visible = 0; visible < TS_SISTER_UI_FX_VISIBLE; ++visible) {
             int row = first + visible;
+            if(row>=model->parameters.fx.slot_count)break;
             int top = TS_SISTER_UI_FX_TOP + 4 + visible * TS_SISTER_UI_FX_ROW_STEP;
             int field_count = (model->parameters.fx.slot[row].type == TS_SISTER_FX_GRAIN ||
                                model->parameters.fx.slot[row].type == TS_SISTER_FX_TRANSIENT ||
@@ -680,6 +684,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
             }
             if (model->parameters.fx.slot[row].type != TS_SISTER_FX_EMPTY) {
                 for (int field = 0; field < field_count; ++field) {
+                    if(model->parameters.fx.slot[row].type==TS_SISTER_FX_EQ && field>0 && field<4)continue;
                     int left = 156 + field * field_step;
                     if (contains(x, y, left, top, field_width, 18)) {
                         hit.action = TS_SISTER_UI_ACTION_PARAMETER;
@@ -692,6 +697,7 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                 }
             }
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_SUNVOX && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_SUNVOX_EDIT;hit.index=row;return hit;}
+            if(model->parameters.fx.slot[row].type==TS_SISTER_FX_EQ && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_EQ_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_AUTOPAN && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_AUTOPAN_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_FILTER && contains(x,y,330,top+22,80,18)){hit.action=TS_SISTER_UI_ACTION_FILTER_EDIT;hit.index=row;return hit;}
             if(model->parameters.fx.slot[row].type==TS_SISTER_FX_TRANSIENT && contains(x,y,320,top+22,66,18)) {
@@ -714,12 +720,13 @@ TsSisterUiHit ts_sister_ui_hit_test_model(const TsSisterUiModel *model,
                     return hit;
                 }
             }
-            if (row > 0 && contains(x, y, 542, top, 36, 18)) {
+            if (contains(x,y,596,top,24,18)) { hit.action=TS_SISTER_UI_ACTION_FX_SLOT_DELETE; hit.index=row; return hit; }
+            if (row > 0 && contains(x, y, 542, top, 24, 18)) {
                 hit.action = TS_SISTER_UI_ACTION_FX_SLOT_MOVE;
                 hit.index = row << 8;
                 return hit;
             }
-            if (row + 1 < model->parameters.fx.slot_count && contains(x, y, 584, top, 36, 18)) {
+            if (row + 1 < model->parameters.fx.slot_count && contains(x, y, 568, top, 24, 18)) {
                 hit.action = TS_SISTER_UI_ACTION_FX_SLOT_MOVE;
                 hit.index = (row << 8) | 1;
                 return hit;

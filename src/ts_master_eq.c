@@ -387,3 +387,43 @@ int ts_eq_morph_read(TsEqMorph *m,const char *key,const char *value)
     }
     return -1;
 }
+
+void ts_effect_eq_init(TsEffectEq *e,unsigned rate)
+{
+    memset(e,0,sizeof(*e));ts_master_eq_init(&e->dsp);ts_master_eq_prepare(&e->dsp,rate);e->gain=e->target_gain=1;
+}
+TsStereoFrame ts_effect_eq_process(TsEffectEq *e,const TsMasterEqControls *c,TsStereoFrame in,float mix,float gain,float gate,float *direct)
+{
+    /* Coefficients change only on actual edits, never once per sample. */
+    if(memcmp(&e->dsp.controls,c,sizeof(*c)))ts_master_eq_set(&e->dsp,c);
+    float follow=1.f/(.02f*e->dsp.sample_rate);
+    e->mix+=(mix-e->mix)*follow;if(gain!=e->gain_db){e->gain_db=gain;e->target_gain=powf(10,gain*.05f);}
+    e->gain+=(e->target_gain-e->gain)*follow;
+    TsStereoFrame wet=ts_master_eq_process(&e->dsp,in);float m=e->mix*gate;
+    if(direct)*direct=1-m;
+    return (TsStereoFrame){in.l*(1-m)+wet.l*m*e->gain,in.r*(1-m)+wet.r*m*e->gain};
+}
+int ts_eq_curve_valid(const TsMasterEqControls *c)
+{
+    if(!c || (c->enabled!=0 && c->enabled!=1) || c->solo_band<0 || c->solo_band>5)return 0;
+    for(int i=0;i<5;++i){const TsEqBand *b=&c->band[i];
+        if((b->enabled!=0 && b->enabled!=1) || b->type<0 || b->type>=TS_EQ_TYPE_COUNT ||
+           !isfinite(b->frequency) || b->frequency<20 || b->frequency>20000 ||
+           !isfinite(b->gain_db) || b->gain_db<-12 || b->gain_db>12 ||
+           !isfinite(b->q) || b->q<TS_MASTER_EQ_MIN_Q || b->q>TS_MASTER_EQ_MAX_Q)return 0;
+    }return 1;
+}
+int ts_eq_curve_write(FILE *f,const char *key,const TsMasterEqControls *c)
+{
+    if(!ts_eq_curve_valid(c) || fprintf(f,"%s=%d,%d",key,c->enabled,c->solo_band)<0)return 0;
+    for(int i=0;i<5;++i){TsEqBand b=c->band[i];if(fprintf(f,",%d,%d,%.9g,%.9g,%.9g",b.enabled,b.type,b.frequency,b.gain_db,b.q)<0)return 0;}
+    return fputc('\n',f)!=EOF;
+}
+int ts_eq_curve_read(TsMasterEqControls *c,const char *text)
+{
+    TsMasterEqControls next={0};int used=0;
+    if(sscanf(text,"%d,%d%n",&next.enabled,&next.solo_band,&used)!=2)return 0;text+=used;
+    for(int i=0;i<5;++i){TsEqBand *b=&next.band[i];used=0;
+        if(sscanf(text,",%d,%d,%f,%f,%f%n",&b->enabled,&b->type,&b->frequency,&b->gain_db,&b->q,&used)!=5)return 0;text+=used;}
+    if(*text || !ts_eq_curve_valid(&next))return 0;*c=next;return 1;
+}
