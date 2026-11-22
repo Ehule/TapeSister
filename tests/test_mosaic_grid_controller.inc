@@ -43,6 +43,7 @@ static void test_mosaic_grid_pitch(SDL_Window *window)
     key(window,SDLK_ESCAPE,0);assert(!ui.mosaic_grid_open && m->grid.unit==1);
     assert(dispatch(&e,window));click(window,150,160,1);click(window,150,290,1);
     assert(!ui.mosaic_grid_open && m->grid.unit==0 && m->grid.division==4);
+    if(getenv("TS_MOSAIC_GRID_NATIVE_PREVIEW"))mosaic_native_check(&instrument,getenv("TS_MOSAIC_GRID_NATIVE_PREVIEW"));
     /* Ordinary movement stays free; Alt snaps the earliest selected start,
        preserving the group's timing offsets and one undo transaction. */
     SDL_SetModState(KMOD_ALT);click(window,190,200,1);motion(window,190,215);release(window,190,215);SDL_SetModState(KMOD_NONE);

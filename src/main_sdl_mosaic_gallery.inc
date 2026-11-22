@@ -55,7 +55,6 @@ static int mosaic_gallery_enter(SDL_AudioDeviceID device,AudioState *a,TsUiState
     /* Release UI pins before changing the epoch; old PCM remains owned by its
        scene or the already sounding immutable performance generations. */
     mosaic_drag_end(ui,c);mosaic_picks_clear(ui,c);
-    if(c->clipboard_epoch==ui->mosaic->epoch && c->clipboard.source && c->clipboard.source->pins)--c->clipboard.source->pins;
     for(int i=0;i<256;++i)if(c->pattern_sources[i] && c->pattern_sources[i]->pins)--c->pattern_sources[i]->pins;
     if(device)SDL_LockAudioDevice(device);
     int ok=ts_gallery_switch(g,index,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status));
@@ -69,7 +68,7 @@ static int mosaic_gallery_enter(SDL_AudioDeviceID device,AudioState *a,TsUiState
     if(device)SDL_UnlockAudioDevice(device);
     if(!ok)return 0;
     runtime_mosaic_sources_clear_selection(a);
-    mosaic_controller_free(c);c->pages=pages;
+    mosaic_controller_change_scene(c);c->pages=pages;
     mosaic_select_only(ui,0);ui->mosaic_source_selected=-1;ui->mosaic_live_status[0]=0;
     ui->mosaic_scroll=to->scroll;ui->mosaic_xscroll=to->xscroll;
     ui->mosaic_scale=to->scale>0?to->scale:24;ui->mosaic_hscale=to->hscale>0?to->hscale:1;

@@ -18,12 +18,17 @@ static void mosaic_grid_overlay(TsFramebuffer *fb,const TsUiState *ui)
     text(fb,136,264,label,dim,1);
     mosaic_button_height(fb,136,278,170,24,"APPLY",1);mosaic_button_height(fb,330,278,170,24,"CANCEL",0);
 }
-static void mosaic_grid_lines(TsFramebuffer *fb,const TsUiState *ui,double scale)
+static double mosaic_grid_display_step(const TsUiState *ui,double scale)
 {
-    if(!ui->mosaic || !ui->mosaic->grid.enabled)return;
+    if(!ui->mosaic || !ui->mosaic->grid.enabled)return 0;
     double step=ts_mosaic_grid_step(ui->mosaic->grid,ui->mosaic_grid_quarter);
     /* Thin dense grids for display only; snapping retains the exact interval. */
     while(step*scale<8)step*=2;
+    return step;
+}
+static void mosaic_grid_lines(TsFramebuffer *fb,const TsUiState *ui,double scale)
+{
+    double step=mosaic_grid_display_step(ui,scale);if(!step)return;
     uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_GRID,RGB(59,47,70));
     double end=ui->mosaic_scroll+TS_MOSAIC_CANVAS_HEIGHT/scale;
     for(double t=ceil(ui->mosaic_scroll/step)*step;t<end;t+=step) {

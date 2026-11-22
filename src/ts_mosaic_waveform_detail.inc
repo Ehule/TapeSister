@@ -237,7 +237,7 @@ static void mosaic_detail_markers(TsUiWaveformDetail *d,const TsUiState *ui,int 
 typedef struct {
     const TsMosaic *scene;
     uint64_t epoch,selected,hover;
-    double scroll,xscroll,scale,hscale,interval;
+    double scroll,xscroll,scale,hscale,interval,grid_step;
     int any_solo,marker_selected,marker_drag;
     double marker_preview;
     TsMosaicMarker markers[TS_MOSAIC_MARKERS];
@@ -257,11 +257,12 @@ static int mosaic_raster_reuse(TsUiWaveformDetail *d,const TsUiState *ui,int any
     uint8_t older[TS_MOSAIC_EVENTS]={0};
     for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id && m->events[i].source && m->events[i].source->pattern)
         older[i]=m->events[i].source->pattern->older!=0;
+    double grid_step=mosaic_grid_display_step(ui,ui->mosaic_scale>0?ui->mosaic_scale:24);
     int match=d->raster_valid && d->raster_mode==-1 && k->scene==m && k->epoch==m->epoch &&
         k->selected==ui->mosaic_selected && k->hover==ui->mosaic_hover_event &&
         k->scroll==ui->mosaic_scroll && k->xscroll==ui->mosaic_xscroll &&
         k->scale==ui->mosaic_scale && k->hscale==ui->mosaic_hscale &&
-        k->interval==interval && k->any_solo==any_solo &&
+        k->interval==interval && k->grid_step==grid_step && k->any_solo==any_solo &&
         k->marker_selected==ui->mosaic_marker_selected && k->marker_drag==ui->mosaic_marker_drag &&
         k->marker_preview==ui->mosaic_marker_preview && !memcmp(k->markers,m->markers,sizeof(k->markers)) &&
         !memcmp(&k->palette,&ui->palette,sizeof(k->palette)) &&
@@ -272,7 +273,7 @@ static int mosaic_raster_reuse(TsUiWaveformDetail *d,const TsUiState *ui,int any
     if(!match) {
         k->scene=m;k->epoch=m->epoch;k->selected=ui->mosaic_selected;k->hover=ui->mosaic_hover_event;
         k->scroll=ui->mosaic_scroll;k->xscroll=ui->mosaic_xscroll;
-        k->scale=ui->mosaic_scale;k->hscale=ui->mosaic_hscale;k->interval=interval;k->any_solo=any_solo;
+        k->scale=ui->mosaic_scale;k->hscale=ui->mosaic_hscale;k->interval=interval;k->grid_step=grid_step;k->any_solo=any_solo;
         k->marker_selected=ui->mosaic_marker_selected;k->marker_drag=ui->mosaic_marker_drag;k->marker_preview=ui->mosaic_marker_preview;
         memcpy(k->markers,m->markers,sizeof(k->markers));
         k->palette=ui->palette;memcpy(k->events,m->events,sizeof(k->events));
@@ -297,6 +298,16 @@ static int mosaic_detail_cards(TsFramebuffer *fb,const TsUiState *ui,int any_sol
     for(;;++tick) {
         int64_t y=mosaic_detail_pixel(tick*interval*rate)-pan;if(y>=d->height)break;
         mosaic_detail_rect(d,0,y,d->width,y+line,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
+    }
+    /* Native cards replace the logical canvas, including its background.
+       Paint snap lines here as well, after ruler ticks but beneath cards. */
+    double grid_step=mosaic_grid_display_step(ui,scale);
+    if(grid_step>0) {
+        uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_GRID,RGB(59,47,70));
+        for(int64_t grid_tick=(int64_t)floor(ui->mosaic_scroll/grid_step);; ++grid_tick) {
+            int64_t y=mosaic_detail_pixel(grid_tick*grid_step*rate)-pan;if(y>=d->height)break;
+            mosaic_detail_rect(d,0,y,d->width,y+line,ink);
+        }
     }
     for(int i=0;i<ui->mosaic_ghost_count;++i)mosaic_detail_card(d,ui,&ui->mosaic_ghosts[i],0,0,1);
     if(ui->mosaic)for(int i=0;i<TS_MOSAIC_EVENTS;++i) {

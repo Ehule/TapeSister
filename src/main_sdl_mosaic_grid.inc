@@ -4,6 +4,15 @@ static void mosaic_grid_status(TsUiState *ui)
     snprintf(ui->status,sizeof(ui->status),g.enabled?"ALT SNAP: GRID 1/%d %s / %.4GS / RIGHT-CLICK GRID: SETTINGS":"ALT SNAP: CARDS / GRID OFF / RIGHT-CLICK GRID: SETTINGS",
         g.division,g.unit==0?"SECOND":g.unit==1?"BEAT":"4 BEATS",ts_mosaic_grid_step(g,ui->mosaic_grid_quarter));
 }
+/* Quantize deliberate pointer seeks only; playback and authored marker/sequence
+   destinations keep their exact timing. Publish the new cursor immediately. */
+static void mosaic_grid_seek(SDL_AudioDeviceID device,TsUiState *ui,double time)
+{
+    if(device)SDL_LockAudioDevice(device);
+    if(ui->mosaic->grid.enabled)time=ts_mosaic_grid_snap(ui->mosaic->grid,ui->mosaic_grid_quarter,time);
+    ts_mosaic_seek(ui->mosaic,time);ui->mosaic_time=ui->mosaic->time;
+    if(device)SDL_UnlockAudioDevice(device);
+}
 static int mosaic_grid_event(const SDL_Event *e,TsUiState *ui,MosaicController *c,int x,int y)
 {
     if(!ui->mosaic_open || !ui->mosaic)return 0;

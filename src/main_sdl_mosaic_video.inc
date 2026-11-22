@@ -50,13 +50,12 @@ static int mosaic_video_event(const SDL_Event *event,SDL_AudioDeviceID device,Au
     if(key && !event->key.repeat && event->key.keysym.sym==SDLK_v &&
        (event->key.keysym.mod&(KMOD_CTRL|KMOD_SHIFT))==(KMOD_CTRL|KMOD_SHIFT) && !(event->key.keysym.mod&(KMOD_ALT|KMOD_GUI))){mosaic_video_open(ui,c,0);return 1;}
     if(down && event->button.button==SDL_BUTTON_RIGHT && x>=151 && x<ts_ui_mosaic_canvas_right(ui) && y>=66 && y<TS_MOSAIC_CANVAS_BOTTOM) {
-        double time=ui->mosaic_scroll+(y-66)/ui->mosaic_scale,left=ui->mosaic_xscroll+(x-151)/(ui->mosaic_hscale>0?ui->mosaic_hscale:1);
         const TsMosaicEvent *e=mosaic_card_at(ui,x,y);
         if(e) {
             if(!e->source->video_path[0])return 0;
             mosaic_select_only(ui,e->id);mosaic_video_open(ui,c,e->id);return 1;
         }
-        mosaic_video_open(ui,c,0);ui->mosaic_video_time=time;ui->mosaic_video_x=left;return 1;
+        return 0; /* Empty space opens the shared actions menu (including Add Video). */
     }
     return 0;
 }

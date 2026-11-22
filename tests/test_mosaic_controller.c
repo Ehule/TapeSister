@@ -52,7 +52,7 @@ static void test_canvas_gestures(SDL_Window *window)
     assert(mosaic_event(&event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000));
     event.type=SDL_KEYDOWN;event.key.windowID=SDL_GetWindowID(window);event.key.keysym.mod=KMOD_CTRL;event.key.keysym.sym=SDLK_c;
     assert(mosaic_event(&event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000));
-    TsMosaicSource *source=e->source;assert(source->pins==1);
+    TsMosaicSource *source=e->source;assert(mosaic.clipboard && !source->pins);
     event.key.keysym.mod=0;event.key.keysym.sym=SDLK_DELETE;
     assert(mosaic_event(&event,window,0,&audio,&ui,&instrument,&mosaic,&portal,&sister,&transform,48000));
     assert(!ts_mosaic_find(ui.mosaic,id));
@@ -102,6 +102,7 @@ static void wait_render(void);
 #include "benchmark_mosaic_edits.inc"
 #include "test_mosaic_controls.inc"
 #include "test_mosaic_grid_controller.inc"
+#include "test_mosaic_grid_transport.inc"
 #include "test_mosaic_source_actions.inc"
 #include "test_mosaic_volume_controls.inc"
 #include "test_mosaic_routing.inc"
@@ -119,6 +120,8 @@ static void wait_render(void);
 #include "test_mosaic_scale.inc"
 #include "test_mosaic_handle_groups.inc"
 #include "test_mosaic_gallery_controller.inc"
+#include "test_mosaic_clipboard.inc"
+#include "test_mosaic_array.inc"
 #include "test_quick_capture.inc"
 #include "test_mosaic_record_bank.inc"
 #include "test_mosaic_record_preview.inc"
@@ -441,7 +444,9 @@ int main(int argc,char **argv)
     }
     uint64_t original=ts_sample_hash(&instrument.current);
     ui.mosaic=audio.mosaic=ts_mosaic_create();ui.mosaic_scale=24;ui.mosaic_open=1;
-    if(argc>1 && !strcmp(argv[1],"--grid-pitch")) {test_mosaic_grid_pitch(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--clipboard")) {test_mosaic_clipboard(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--array")) {test_mosaic_array(window);goto done;}
+    if(argc>1 && !strcmp(argv[1],"--grid-pitch")) {test_mosaic_grid_pitch(window);test_mosaic_grid_transport(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--grab")) {test_mosaic_grab(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--browser")) {test_mosaic_browser(window);goto done;}
     if(argc>1 && !strcmp(argv[1],"--handles")) {test_mosaic_handle_groups(window);test_mosaic_scale_snap(window);goto done;}
