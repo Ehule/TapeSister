@@ -15,7 +15,7 @@ def fields(row):
     return dict(re.findall(r"(\w+)=(.*?)(?=\s+\w+=|$)", row.get("detail", "")))
 
 
-def phase_usage(run, windows):
+def phase_usage(run, windows, by_movement=False):
     """Use complete windows after settling; never mix transition boundaries."""
     phases = [r for r in run if r.get("type") == "live_test_phase"]
     groups = {}
@@ -23,16 +23,36 @@ def phase_usage(run, windows):
         state = fields(row)
         begin = row["t_ms"] + float(state.get("settle_ms", 0))
         end = phases[i + 1]["t_ms"] if i + 1 < len(phases) else run[-1]["t_ms"]
-        key = (state["mode"], state["fx_canvas"])
+        key = (state["mode"], state["fx_canvas"], int(state.get("movement", -1)) if by_movement else -1)
         groups.setdefault(key, []).extend(w for w in windows if w["from_ms"] >= begin and w["t_ms"] <= end)
     result = []
-    for (mode, canvas), samples in sorted(groups.items()):
+    for (mode, canvas, movement), samples in sorted(groups.items()):
         callbacks = sum(w.get("callbacks", 0) for w in samples)
         result.append({"mode": mode, "fx_canvas": canvas == "1", "windows": len(samples),
                        "callbacks": callbacks,
                        "average_callback_ms": sum(w.get("average_ms", 0) * w.get("callbacks", 0) for w in samples) / callbacks if callbacks else None,
                        "peak_callback_ms": max((w["peak_ms"] for w in samples), default=None),
                        "over_budget": sum(w.get("over_budget", 0) for w in samples)})
+        if by_movement:
+            result[-1]["movement"] = movement
+    return result
+
+
+def movement_usage(run, windows):
+    phases = phase_usage(run, windows, by_movement=True)
+    result = []
+    for row in run:
+        if row.get("type") != "live_test_movement":
+            continue
+        metadata, _, name = row.get("detail", "").partition(" name=")
+        info = fields({"detail": metadata})
+        index = int(info["movement"])
+        result.append({"movement": index, "name": name, "id": info["id"],
+                       "length_seconds": float(info["length_s"]),
+                       "cards": int(info["cards"]), "markers": int(info["markers"]),
+                       "playback": info["playback"],
+                       "inventory": info,
+                       "phase_usage": [p for p in phases if p["movement"] == index]})
     return result
 
 
@@ -66,6 +86,10 @@ def summarize(path):
     # Only whole windows wholly inside the replay; boundary windows mix load/startup.
     windows = [r for r in run if r.get("type") == "audio_window"
                and r.get("from_ms", -1) >= run[0]["t_ms"] and r["t_ms"] <= run[-1]["t_ms"]]
+    movements = movement_usage(run, windows)
+    if start["scenario"] == "gallery-live-v1":
+        expected = int(start.get("movements", 0))
+        valid = valid and expected > 0 and [m["movement"] for m in movements] == list(range(expected))
     observed_peak = max((r["peak_ms"] for r in windows), default=None)
     device_rows = [r for r in rows if r.get("type") == "audio_device"
                    and fields(r).get("generation") == counters[0]["generation"]
@@ -85,6 +109,7 @@ def summarize(path):
         "over_budget_percent": 100 * overruns / callbacks if callbacks else None,
         "observed_peak_ms_in_complete_windows": observed_peak,
         "phase_usage": phase_usage(run, windows),
+        "movements": movements,
         "max_action_lateness_ms": max((float(x["late_ms"]) for x in begins), default=0),
         "max_action_duration_ms": max((float(x["duration_ms"]) for x in ends), default=0),
         "slowest_actions": sorted(

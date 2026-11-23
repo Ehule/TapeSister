@@ -41,8 +41,33 @@ static void poll_at(SDL_Window *window,Uint64 now)
     live_log_drain();
     live_test_poll(window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform,now);
 }
+static int live_fixture(const char *path)
+{
+    char error[256];ts_instrument_init(&bank);
+    assert(ts_sample_pages_init(&pages,error,sizeof(error)));
+    pages.mosaic=ts_mosaic_create();assert(pages.mosaic);
+    assert(ts_sample_pages_enable_gallery(&pages,error,sizeof(error)));
+    TsSample sample={.frames=4800,.channels=1,.sample_rate=48000};
+    sample.data=malloc(sample.frames*sizeof(float));assert(sample.data);
+    for(size_t i=0;i<sample.frames;++i)sample.data[i]=.01f*sinf((float)i*.04f);
+    snprintf(sample.name,sizeof(sample.name),"SHORT DIAGNOSTIC TONE");
+    assert(ts_instrument_import_sample(&bank,&sample,0,0,0,TS_LOOP_FORWARD,error,sizeof(error)));
+    TsMosaicSource *s=ts_mosaic_source(pages.mosaic,&sample,error,sizeof(error));assert(s);
+    assert(ts_mosaic_add(pages.mosaic,s,0,50));
+    pages.mosaic->markers[0]=(TsMosaicMarker){.stored=1,.time=.05};
+    pages.mosaic->grid=(TsMosaicGrid){1,0,1};
+    assert(ts_gallery_rename(pages.gallery,0,"A short movement",error,sizeof(error)));
+    assert(ts_gallery_add(pages.gallery,error,sizeof(error)));
+    assert(ts_gallery_rename(pages.gallery,1,"Empty movement",error,sizeof(error)));
+    int saved=ts_sample_pages_save_project(&pages,&bank,NULL,NULL,path,error,sizeof(error));
+    if(!saved)fprintf(stderr,"Diagnostic fixture: %s\n",error);assert(saved);
+    ts_sample_free(&sample);
+    TsMosaic *root=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);ts_mosaic_free(root);
+    ts_instrument_free(&bank);return 0;
+}
 int main(int argc,char **argv)
 {
+    if(argc==3 && !strcmp(argv[1],"--make-fixture"))return live_fixture(argv[2]);
     /* Optional full application integration run, normal device and UI loop.
        Caller supplies an isolated INI with diagnostic_live_test=1. */
     if(argc==3 && !strcmp(argv[1],"--run")) {
@@ -94,28 +119,21 @@ int main(int argc,char **argv)
     assert(!SDL_SemWaitTimeout(live_log_reached,10000));
     a.sister.matrix.controls=u.config.matrix;
     u.config.diagnostic_live_test=1;live_test_loaded(0,&a,&u,&pages,u.project_path);
-    assert(live_test.state==LT_ARMED && live_test_save_blocked() && !u.mosaic->playing && u.mosaic->time==300);
-    assert(live_test.count==240 && !strcmp(live_test_scenario(),"tree04-live-v1") && live_test.steps[live_test.count-1].ms==216000);
+    assert(live_test.state==LT_PREPARING && live_test_save_blocked() && !u.mosaic->playing);
+    assert(live_test.movements==10 && !strcmp(live_test_scenario(),"gallery-live-v1"));
+    assert(live_test.duration_ms==8100+3*67000+7*12000);
     for(int i=1;i<live_test.count;++i)assert(live_test.steps[i].ms>live_test.steps[i-1].ms);
     poll_at(window,SDL_GetPerformanceCounter());
-    assert(live_test.state==LT_ARMED && !live_test.next);
-    /* A press of the real transport arms the monotonic schedule. */
+    assert(live_test.state==LT_ARMED && pages.gallery->active==0 && !live_test.next);
+    /* Play starts a measured run; delayed actions retain the original schedule. */
     ts_profile_enable(1);
-    mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing && !ts_profile_enabled());
+    mosaic_transport(0,&a,&u,0);assert(live_test.state==LT_PENDING && u.mosaic->playing && ts_profile_enabled());
     poll_at(window,live_test.started);
     assert(live_test.state==LT_RUNNING && live_test.next==1);
     Uint64 origin=live_test.started;
     unsigned scheduled=live_test.steps[1].ms;
-    poll_at(window,
-        origin+(Uint64)((scheduled+25)*live_test.frequency/1000));
+    poll_at(window,origin+(Uint64)((scheduled+25)*live_test.frequency/1000));
     assert(live_test.next==2 && live_test.started==origin && live_test.steps[1].ms==scheduled);
-    mosaic_sources_refresh(&u,&bank,&mosaic);
-    LiveTestStep mute={0,LT_MUTE,0,1},solo={0,LT_SOLO,0,1};
-    assert(live_test_action(&mute,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
-    assert(ts_mosaic_find(u.mosaic,live_test.card[2])->muted);
-    mute.value=0;assert(live_test_action(&mute,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
-    assert(live_test_action(&solo,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
-    solo.value=0;assert(live_test_action(&solo,window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));
     live_log_drain();
     SDL_Event escape=live_test_key(window,SDLK_ESCAPE,KMOD_NONE);
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !u.mosaic->playing && ts_profile_enabled());
@@ -130,6 +148,7 @@ int main(int argc,char **argv)
     /* The second mode starts Keter at zero through the real Gallery controller.
        It never edits parameters or windows during the measurement. */
     live_log_drain();
+    pages.gallery->active=2;a.mosaic=u.mosaic=pages.mosaic=ts_gallery_active(pages.gallery);
     u.config.diagnostic_live_test=2;
     live_test_loaded(0,&a,&u,&pages,u.project_path);
     assert(live_test.state==LT_PREPARING && live_test.duration_ms==608000);
@@ -182,38 +201,58 @@ int main(int argc,char **argv)
     mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
     live_log_drain();
     assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
-    /* The new composition uses option 1, ten canvases, interval profiling,
-       and the real Space/Backspace/seek controllers, while legacy schedules stay fixed. */
-    static const char *angelic_names[]={"KETER","CHOKHMAH","BINAH","CHESED","GEVURAH","TIFERET","NETZACH","HOD","YESOD","MALKHUT"};
-    for(int c=0;c<10;++c) {
+    /* Option 1 accepts arbitrary names, saved mute/solo, disabled Matrix,
+       subsecond movements, empty canvases, and the maximum gallery size. */
+    for(int c=10;c<TS_GALLERY_LIMIT;++c)assert(ts_gallery_add(pages.gallery,error,sizeof(error)));
+    for(int c=0;c<TS_GALLERY_LIMIT;++c) {
         TsMosaic *m=pages.gallery->canvas[c].scene;
-        snprintf(pages.gallery->canvas[c].name,TS_GALLERY_NAME,"%s",angelic_names[c]);
-        if(c>=3)m->events[0]=(TsMosaicEvent){.id=100+c,.source=&source,.duration=600,.width=50,.gain=1};
-        m->playing=0;m->audition_id=0;m->markers[0]=(TsMosaicMarker){.stored=1,.time=210};
+        snprintf(pages.gallery->canvas[c].name,TS_GALLERY_NAME,"Custom movement %d",c+1);
+        if(c>=3 && c!=7)m->events[0]=(TsMosaicEvent){.id=100+c,.source=&source,.duration=.1+c,.width=50,.gain=1};
+        m->playing=0;m->audition_id=0;
+        m->markers[0]=(TsMosaicMarker){.stored=1,.time=210}; /* Outside short scenes: skip. */
+        m->grid=(TsMosaicGrid){1,0,1};
     }
-    snprintf(u.project_path,sizeof(u.project_path),"Tree-of-Life-Angelic-Noise.tsr");
-    assert(live_test_angelic_matches(&u.config.matrix,&pages,u.project_path));
-    pages.gallery->canvas[9].scene->events[0].solo=1;
-    assert(!live_test_angelic_matches(&u.config.matrix,&pages,u.project_path));
-    pages.gallery->canvas[9].scene->events[0].solo=0;
+    pages.gallery->canvas[0].scene->events[0].muted=1;
+    pages.gallery->canvas[1].scene->events[0].solo=1;
+    pages.gallery->canvas[2].scene->speed=.75;
+    u.config.matrix.enabled=a.sister.matrix.controls.enabled=0;
+    snprintf(u.project_path,sizeof(u.project_path),"Renamed Project With Spaces.tsr");
     u.config.diagnostic_live_test=1;live_test_loaded(0,&a,&u,&pages,u.project_path);
-    assert(live_test.angelic && live_test.state==LT_PREPARING && live_test.duration_ms==792100);
-    assert(!strcmp(live_test_scenario(),"angelic-noise-live-v1") && live_test.count>500);
-    int visited[10]={1},actions[LT_ASSERT+1]={0};
-    for(int i=0;i<live_test.count;++i){LiveTestStep step=live_test.steps[i];++actions[step.action];
+    assert(live_test.gallery_test && live_test.state==LT_PREPARING && live_test.movements==TS_GALLERY_LIMIT);
+    assert(live_test.movement_markers[0]==1 && live_test.movement_markers[3]==0);
+    assert(live_test.movement_cards[7]==0 && pages.gallery->canvas[2].scene->speed==.75);
+    int visited[TS_GALLERY_LIMIT]={0},inventories=0;
+    for(int i=0;i<live_test.count;++i) {
+        LiveTestStep step=live_test.steps[i];
         if(i)assert(step.ms>live_test.steps[i-1].ms);
         if(step.action==LT_GALLERY)visited[step.target]=1;
+        if(step.action==LT_INVENTORY)++inventories;
+        assert(step.action!=LT_MIX && step.action!=LT_MUTE && step.action!=LT_SOLO && step.action!=LT_BYPASS);
     }
-    for(int c=0;c<10;++c)assert(visited[c]);
-    assert(actions[LT_BACKSPACE]>=30 && actions[LT_SPACE]>=30 && actions[LT_ASSERT]>=60);
+    assert(inventories==TS_GALLERY_LIMIT && live_test.count<1024);
+    for(int c=0;c<TS_GALLERY_LIMIT;++c)assert(visited[c]);
     poll_at(window,SDL_GetPerformanceCounter());
     assert(live_test.state==LT_ARMED && pages.gallery->active==0 && u.mosaic->time==0);
     mosaic_transport(0,&a,&u,0);assert(ts_profile_enabled());
-    LiveTestStep steps[]={ {0,LT_SPACE,0,0},{0,LT_ASSERT,1,0},{0,LT_BACKSPACE,0,0},{0,LT_ASSERT,2,0},
-        {0,LT_BACKSPACE,1,0},{0,LT_ASSERT,3,0},{0,LT_SPACE,1,0},{0,LT_SEEK,0,.5f},{0,LT_SEEK,1,.35f} };
-    for(size_t i=0;i<sizeof(steps)/sizeof(*steps);++i){live_log_drain();assert(live_test_action(&steps[i],window,0,&a,&u,&pages,&bank,&mosaic,&portal,&sister,&transform));}
-    assert(u.mosaic->time==210 && !a.engine_stopped && u.mosaic->playing);
-    assert(live_test_input(&escape,0,&a,&u) && live_test.state==LT_ABORTED && !ts_profile_enabled());
+    for(int step=0;step<live_test.count;++step) {
+        poll_at(window,live_test.started+(Uint64)ceil(live_test.steps[step].ms*live_test.frequency/1000.0));
+        if(live_test.next!=step+1 || live_test.state==LT_ABORTED)
+            fprintf(stderr,"Gallery step %d action=%s: next=%d state=%d status=%s\n",step,
+                live_test_action_name(live_test.steps[step].action),live_test.next,live_test.state,u.status);
+        assert(live_test.next==step+1 && live_test.state!=LT_ABORTED);
+    }
+    assert(live_test.state==LT_DONE && !u.mosaic->playing && !ts_profile_enabled());
+    assert(pages.gallery->canvas[0].scene->events[0].muted && pages.gallery->canvas[1].scene->events[0].solo);
+    assert(!a.sister.matrix.controls.enabled && pages.gallery->canvas[2].scene->speed==.75);
+    /* Loading another project discards the old schedule and save guard, even
+       when diagnostics are switched off or the next Gallery is unavailable. */
+    u.config.diagnostic_live_test=0;live_test_loaded(0,&a,&u,&pages,"another.tsr");
+    assert(!live_test_save_blocked() && live_test.state==LT_OFF && live_test.count==0);
+    u.config.diagnostic_live_test=1;
+    TsSamplePages empty={0};live_test_loaded(0,&a,&u,&empty,"empty.tsr");
+    assert(live_test.state==LT_OFF && !live_test_save_blocked());
+    live_test_loaded(0,&a,&u,&pages,u.project_path);
+    poll_at(window,SDL_GetPerformanceCounter());
     live_log_drain();
     TsSessionLogStatus before_loss;ts_session_log_status(&before_loss);
     assert(!before_loss.dropped_audio && !before_loss.dropped_events);

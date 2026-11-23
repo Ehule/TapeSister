@@ -264,10 +264,13 @@ and the counter/window updates, measured 0.076–0.085 microseconds per callback
 over five runs of one million calls on this Linux host. This excludes display
 rendering and native backend processing and is not a Windows hardware guarantee.
 
-## Repeatable Tree of Life 04 diagnostic
+## Loaded-project Gallery diagnostic
 
-Set `diagnostic_live_test=1` in the active INI and restart to arm the fixed
-live controller replay when the original Tree of Life 04 project opens.
-Mosaic Play starts it; health recording and log export are automatic. The
-default is off. See [the run instructions](audits/live-test.md) for the
-required project, abort/repeat behavior and interpretation of the logs.
+Set `[Audio] diagnostic_live_test=1` in the active `tapesister.ini` and restart.
+Open any project and press Mosaic Play when **GALLERY TEST ARMED** appears.
+The test discovers all movements, samples playback and idle states, profiles
+available effects, and exports its log to that project's `logs` folder.
+It shows the movement count and estimated duration before starting. Empty
+canvases and absent markers are handled automatically. Escape aborts.
+Set the option to `0` and restart for normal editing. See
+[the run instructions](audits/live-test.md) for coverage and interpretation.
