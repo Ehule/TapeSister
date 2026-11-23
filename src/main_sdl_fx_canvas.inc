@@ -1,3 +1,6 @@
+#include "tapesister/movement_name.h"
+static void movement_navigator_open(TsUiState *,TsSamplePages *);
+static void begin_mosaic_layout(TsUiState *);
 /* A spatial view of the Matrix's exact routes. Only the existing Matrix
    transactions may change audio; positions, pan and zoom are view metadata. */
 enum { FX_GRID=32, FX_NODE_W=210, FX_NODE_H=86, FX_RIGHT=1000, FX_DRAG_NODE=100, FX_DRAG_WIRE, FX_DRAG_PAN, FX_DRAG_BOX, FX_DRAG_GRAB, FX_DRAG_SCALE, FX_DRAG_SHIFT_NODE, FX_DRAG_WIRE_BOX, FX_DRAG_DIVIDER, FX_DRAG_CONTROL=120, FX_DRAG_MACRO=140, FX_DRAG_LABEL=151, FX_DRAG_LABEL_GRAB, FX_DRAG_LABEL_SCALE, FX_DRAG_GROUP };
@@ -32,7 +35,7 @@ static struct {
 #define FX_BOTTOM (fx_canvas.meta?682:MATRIX_H-(fx_canvas.help?144:48))
 enum { FX_TOOL_MATRIX,FX_TOOL_UNDO,FX_TOOL_REDO,FX_TOOL_ADD,FX_TOOL_FIT,
        FX_TOOL_CLOSE,FX_TOOL_HELP,FX_TOOL_EDITOR,FX_TOOL_MOVEMENT,
-       FX_TOOL_CURVES,FX_TOOL_SNAP,FX_TOOL_CLEAR,FX_TOOL_CPU,FX_TOOL_COUNT };
+       FX_TOOL_CURVES,FX_TOOL_SNAP,FX_TOOL_CLEAR,FX_TOOL_CPU,FX_TOOL_NAVIGATOR,FX_TOOL_PROJECT,FX_TOOL_LAYOUT,FX_TOOL_COUNT };
 static TsUiRect fx_toolbar_rect(int tool)
 {
     static const char *labels[]={"MATRIX F9","UNDO","REDO","+ EFFECT","FIT","MOSAIC","HELP","EDITOR"};
@@ -45,6 +48,9 @@ static TsUiRect fx_toolbar_rect(int tool)
     if(tool==FX_TOOL_CURVES)return ts_ui_control_rect(326,56,"STRAIGHT",2,0);
     if(tool==FX_TOOL_SNAP)return ts_ui_control_rect(448,56,"SNAP OFF",2,0);
     if(tool==FX_TOOL_CLEAR)return ts_ui_control_rect(570,56,"CLEAR CABLES",2,0);
+    if(tool==FX_TOOL_NAVIGATOR)return ts_ui_control_rect(744,56,"MOVEMENTS",2,0);
+    if(tool==FX_TOOL_PROJECT)return ts_ui_control_rect(880,56,"PROJECT",2,0);
+    if(tool==FX_TOOL_LAYOUT)return ts_ui_control_rect(992,56,"VIEW SIZES",2,0);
     return (TsUiRect){MATRIX_W-200,MATRIX_H-36,180,TS_UI_TOOLBAR_HEIGHT};
 }
 static int fx_toolbar_hit(int tool,int x,int y)
@@ -77,7 +83,7 @@ static TsMatrixEffectControls *fx_meta(void)
 static TsFxCanvasPosition *fx_position_source(TsFxCanvasPosition *p,MatrixRow row)
 {
     TsMosaicEvent *e=row.kind==3?mx_card(row):NULL;
-    if(e){snprintf(p->name,sizeof(p->name),"%.47s",e->name);p->color=e->color;}
+    if(e){snprintf(p->name,sizeof(p->name),"%s",e->name);p->color=e->color;}
     return p;
 }
 static TsFxCanvasPosition *fx_position(MatrixRow row,int create)
@@ -696,7 +702,11 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             TsFxCanvasPosition *style=fx_position(n->row,0);
             if(style && style->name[0]){title=style->name;snprintf(compact,sizeof(compact),"%s",title);}
             TsMosaicEvent *source=n->row.kind==3?mx_card(n->row):NULL;
-            if(source){title=source->name;snprintf(compact,sizeof(compact),"%s",title);
+            if(source){title=source->name;
+                const char *layer=title;
+                if(w->gallery)for(int c=0;c<w->gallery->count;++c)if(w->gallery->canvas[c].id==n->row.canvas)
+                    layer=ts_movement_layer(title,w->gallery->canvas[c].name);
+                snprintf(compact,sizeof(compact),"%s",layer);
                 detail=source->muted?"MUTED / M: TOGGLE":source->solo?"SOLO / ALT+S: TOGGLE":"M: MUTE / ALT+S: SOLO";}
             uint32_t color=c && !c->enabled?FX_MUTED:fx_source_color(n->row);
             if(fx_canvas.active_view && fx_row_playing(n->row)) {
@@ -747,14 +757,19 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             TsUiRect r=fx_toolbar_rect(i);fx_button(r.x,r.y,r.w,second[i-FX_TOOL_MOVEMENT],i==FX_TOOL_MOVEMENT?(fx_canvas.movement!=0 || fx_canvas.active_view):i==FX_TOOL_SNAP?w->layout->canvas_snap:0);
         }
     }
+    if(!meta) {
+        const char *tools[]={"MOVEMENTS","PROJECT","VIEW SIZES"};
+        for(int i=0;i<3;++i){TsUiRect r=fx_toolbar_rect(FX_TOOL_NAVIGATOR+i);fx_button(r.x,r.y,r.w,tools[i],0);}
+    }
     if(w->status[0])fx_panel_text(24,MATRIX_H-34,MATRIX_W-240,28,w->status,FX_FOCUS,1,1);
     else {snprintf(label,sizeof(label),"%d NODES / %.0F%% / Z: FRAME SELECTED",fx_canvas.count,w->layout->canvas_zoom*100);mx_text(24,MATRIX_H-28,label,FX_DIM,1);}
     ts_ui_cpu_label(label,sizeof(label),ts_audio_cpu_percent);
     TsUiRect cpu=fx_toolbar_rect(FX_TOOL_CPU);fx_button(cpu.x,cpu.y,cpu.w,"",0);
-    mx_text(cpu.x+(cpu.w-(int)strlen(label)*12)/2,cpu.y+7,label,ts_audio_cpu_percent<0?FX_DIM:
+    mx_text(cpu.x+10,cpu.y+3,label,ts_audio_cpu_percent<0?FX_DIM:
         ts_theme_color(&w->palette,TS_THEME_MOSAIC,
             ts_audio_cpu_percent>=100?TS_COLOR_ERROR:ts_audio_cpu_percent>=90?TS_COLOR_WARNING:TS_COLOR_ACTIVITY,
-            ts_audio_cpu_percent>=100?0xffeb777du:ts_audio_cpu_percent>=90?0xffdfbc72u:0xff8addb4u),2);
+            ts_audio_cpu_percent>=100?0xffeb777du:ts_audio_cpu_percent>=90?0xffdfbc72u:0xff8addb4u),1);
+    mx_text(cpu.x+10,cpu.y+16,ts_audio_activity,FX_DIM,1);
     if(fx_canvas.popup)fx_popup_paint();
     if(fx_canvas.label_editing)fx_label_editor_paint();
     if(fx_canvas.confirm_delete) {
@@ -822,5 +837,13 @@ static void fx_return_mosaic(SDL_Window *main,TsUiState *ui)
 {
     fx_selection_to_mosaic(ui);ui->mosaic_open=1;ui->tracker_open=0;
     matrix_hide();SDL_ShowWindow(main);SDL_RaiseWindow(main);SDL_SetWindowInputFocus(main);
+}
+static void fx_focus_movement(uint64_t movement,int playing,TsSamplePages *pages,TsInstrument *bank)
+{
+    fx_canvas.active_view=playing;fx_canvas.movement=movement;
+    memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
+    fx_clear_selection();fx_clear_wires();matrix_window.effect_open=matrix_window.compressor_open=0;
+    fx_build(pages,bank);fx_fit();matrix_window.dirty=1;
+    snprintf(matrix_window.status,sizeof(matrix_window.status),"MOVEMENT VIEW / PLAYBACK AND ROUTING UNCHANGED");
 }
 #include "main_sdl_fx_canvas_input.inc"

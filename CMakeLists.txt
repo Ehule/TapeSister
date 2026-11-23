@@ -1061,6 +1061,12 @@ if(TAPESISTER_BUILD_SDL)
   endif()
   add_test(NAME tapesister_new_project_tests COMMAND tapesister_new_project_tests)
   add_test(NAME tapesister_project_save_worker_tests COMMAND tapesister_new_project_tests --save-worker)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME tapesister_album_workflow_tests COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_album_workflow.py" "$<TARGET_FILE:tapesister_new_project_tests>")
+  else()
+    add_test(NAME tapesister_album_workflow_tests COMMAND tapesister_new_project_tests --album-workflow)
+  endif()
 endif()
 
 if(TAPESISTER_BUILD_SDL)

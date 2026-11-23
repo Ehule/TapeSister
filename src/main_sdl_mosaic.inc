@@ -554,6 +554,7 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
         if(event->window.event!=SDL_WINDOWEVENT_LEAVE)ui->mosaic_context_open=0;
     }
     if(!ui->mosaic)return 0;
+    gallery_main_window_id=SDL_GetWindowID(window);
     if(audio->sister.clock_controls.source!=TS_CLOCK_TRACKER_SOURCE || ui->mosaic_grid_quarter<=0)
         ui->mosaic_grid_quarter=audio->sister.clock_controls.bpm>0?60.0/audio->sister.clock_controls.bpm:.5;
     /* Notes started in another workspace still own their key/pointer releases.
@@ -578,6 +579,8 @@ static int mosaic_event(const SDL_Event *event,SDL_Window *window,SDL_AudioDevic
     if(motion)logical_mouse(window,event->motion.x,event->motion.y,&x,&y);
     if(event->type==SDL_MOUSEWHEEL){int mx,my;wheel_event_mouse(event,&mx,&my);logical_mouse(window,mx,my,&x,&y);}
     SDL_Keymod mod=key?(SDL_Keymod)event->key.keysym.mod:SDL_GetModState();
+    if(ui->mosaic_open && !ui_dialog_open(ui) && down && event->button.button==SDL_BUTTON_RIGHT &&
+       x>=214 && x<260 && y>=4 && y<20) {begin_mosaic_layout(ui);return 1;}
     if(ui->mosaic_context_open && mosaic_context_event(event,device,audio,ui,instrument,c,x,y))return 1;
     if(mosaic_array_event(event,device,ui,instrument,c,x,y))return 1;
     if(mosaic_grid_event(event,ui,c,x,y))return 1;

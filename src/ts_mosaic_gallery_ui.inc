@@ -27,8 +27,9 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
         int x=126+(i/8)*244,y=105+(i%8)*20;
         int selected=i==(ui->mosaic_canvas_import_count?ui->mosaic_canvas_import_selected:ui->mosaic_gallery_selected),active=!ui->mosaic_canvas_import_count && i==ui->mosaic_gallery_active;
         rect(fb,x,y,236,18,selected?edge:panel);
-        snprintf(line,sizeof(line),"%02d %.30s%s",i+1,ui->mosaic_canvas_import_count?ui->mosaic_canvas_import_names[i]:ui->mosaic_gallery_names[i],active?" *":"");
+        snprintf(line,sizeof(line),"%02d %.28s%s",i+1,ui->mosaic_canvas_import_count?ui->mosaic_canvas_import_names[i]:ui->mosaic_gallery_names[i],active?" *":"");
         text(fb,x+4,y+5,line,active?accent:ink,1);
+        if(!ui->mosaic_canvas_import_count)mosaic_button_height(fb,x+212,y+1,24,16,"FX",0);
     }
     if(ui->mosaic_canvas_import_count) {
         mosaic_button(fb,128,273,147,"ADD TO END",!ui->mosaic_canvas_import_replace,0);
@@ -54,6 +55,10 @@ static void mosaic_gallery_overlay(TsFramebuffer *fb,const TsUiState *ui)
     mosaic_gallery_button(fb,TS_GALLERY_DELETE,ui->mosaic_gallery_delete?"CONFIRM":"DELETE",ui->mosaic_gallery_delete);
     mosaic_gallery_button(fb,TS_GALLERY_ENTER,selected==ui->mosaic_gallery_active?"ACTIVE":"ENTER",selected==ui->mosaic_gallery_active);
     mosaic_gallery_button(fb,TS_GALLERY_CLOSE,"CLOSE",0);
+    if(!ui->mosaic_gallery_rename) {
+        mosaic_button_height(fb,312,319,66,16,"PIN LIST",ui->mosaic_gallery_pinned);
+        mosaic_button_height(fb,388,319,84,16,"FOCUS FX",0);
+    }
     if(!ui->mosaic_gallery_rename) {
         mosaic_gallery_button(fb,TS_GALLERY_EARLIER,"MOVE EARLIER",0);mosaic_gallery_button(fb,TS_GALLERY_LATER,"MOVE LATER",0);
         mosaic_button(fb,438,349,160,"SEQUENCER",ui->gallery_player.running,0);

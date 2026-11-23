@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "tapesister/movement_name.h"
+#include "ts_movement_rename.inc"
 
 TsFxCanvasGroup *ts_matrix_layout_group(TsMatrixLayout *l,uint32_t id)
 {if(id && l)for(int i=0;i<l->group_count;++i)if(l->groups[i].id==id)return &l->groups[i];return NULL;}
@@ -236,7 +238,7 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
         if(!layout_number(&s,TS_FX_CANVAS_POSITIONS-1,&i) || *s || i>=(uint64_t)l->canvas_count ||
            !layout_number(&value,UINT32_MAX,&color) || *value++!=',' || (color && color>>24!=255))return -1;
         size_t len=strlen(value);if(len%2 || len/2>=sizeof(l->canvas[i].name))return -1;
-        char name[48]={0};
+        char name[sizeof(l->canvas[i].name)]={0};
         for(size_t j=0;j<len;j+=2) {
             if(!isxdigit((unsigned char)value[j]) || !isxdigit((unsigned char)value[j+1]))return -1;
             char byte[3]={value[j],value[j+1],0};unsigned v=(unsigned)strtoul(byte,NULL,16);

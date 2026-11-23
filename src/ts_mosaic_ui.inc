@@ -216,7 +216,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     char label[100];
     if(top>=66 && style.chars>0 && x>=151) {
         int chars=(int)fmin(style.chars,(ts_ui_mosaic_canvas_right(ui)-x-style.margin)/6);
-        mosaic_card_name(label,sizeof(label),e->name,chars);
+        mosaic_card_name(label,sizeof(label),mosaic_layer_name(ui,e),chars);
         text(fb,x+(int)style.margin,y+(style.compact?2:4),label,
             dim?color:ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),1);
     }

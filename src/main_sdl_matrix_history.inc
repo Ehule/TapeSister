@@ -5,6 +5,9 @@ struct MatrixSnapshot {
     TsMatrixControls controls;TsRouterControls router;TsSpatialControls spatial;
     TsCompressorControls compressor;FxProcessorState fixed;
     TsInsertControls insert;uint16_t sources;int count;
+    int movement_count;
+    uint64_t movement_ids[TS_GALLERY_LIMIT];
+    char movement_names[TS_GALLERY_LIMIT][TS_GALLERY_NAME];
     TsMatrixLayout layout;
     MatrixSavedRoute routes[];
 };
@@ -22,6 +25,13 @@ static MatrixSnapshot *mx_snapshot(SDL_AudioDeviceID device,AudioState *audio,Ts
         for(int i=0;i<TS_BANK_SLOT_COUNT;++i)count+=page->bank[i].occupied!=0;
     }
     MatrixSnapshot *s=calloc(1,sizeof(*s)+count*sizeof(s->routes[0]));if(!s)return NULL;
+    if(pages->gallery) {
+        s->movement_count=pages->gallery->count;
+        for(int i=0;i<s->movement_count;++i) {
+            s->movement_ids[i]=pages->gallery->canvas[i].id;
+            memcpy(s->movement_names[i],pages->gallery->canvas[i].name,TS_GALLERY_NAME);
+        }
+    }
     s->layout=audio->sister.matrix_layout; /* Presentation metadata is UI-owned. */
     if(device)SDL_LockAudioDevice(device);
     s->controls=audio->sister.matrix.controls;s->router=audio->sister.router.controls;s->spatial=audio->sister.spatial.controls;
@@ -63,6 +73,33 @@ static void mx_keep_canvas_view(TsMatrixLayout *layout,const TsMatrixLayout *vie
     layout->canvas_view=view->canvas_view;layout->canvas_split=view->canvas_split;
     layout->canvas_x=view->canvas_x;layout->canvas_y=view->canvas_y;layout->canvas_zoom=view->canvas_zoom;
 }
+static void mx_restore_names(const MatrixSnapshot *s,TsUiState *ui,TsSamplePages *pages)
+{
+    TsMosaicGallery *g=pages->gallery;
+    if(g)for(int c=0;c<g->count;++c)for(int i=0;i<s->movement_count;++i)
+        if(g->canvas[c].id==s->movement_ids[i]) {
+            memcpy(g->canvas[c].name,s->movement_names[i],TS_GALLERY_NAME);
+            memcpy(ui->mosaic_gallery_names[c],s->movement_names[i],TS_GALLERY_NAME);
+        }
+    for(int i=0;i<s->count;++i) {
+        const MatrixSavedRoute *r=&s->routes[i];if(r->row.kind!=3)continue;
+        TsMosaicEvent *e=mx_card(r->row);if(!e)continue;
+        if(strcmp(e->name,r->name) || e->color!=r->color) {
+            memcpy(e->name,r->name,sizeof(e->name));e->color=r->color;
+            ++e->revision;++mx_card_scene(r->row)->revision;
+        }
+    }
+}
+static int mx_audio_equal(const MatrixSnapshot *a,const MatrixSnapshot *b)
+{
+    if(a->count!=b->count || memcmp(a,b,offsetof(MatrixSnapshot,movement_count)))return 0;
+    for(int i=0;i<a->count;++i) {
+        const MatrixSavedRoute *x=&a->routes[i],*y=&b->routes[i];
+        if(!mx_same(x->row,y->row) || memcmp(&x->route,&y->route,sizeof(x->route)) ||
+           x->muted!=y->muted || x->solo!=y->solo)return 0;
+    }
+    return 1;
+}
 static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
 {
     if(!s)return 0;MatrixWindow *w=&matrix_window;
@@ -100,6 +137,7 @@ static int mx_apply(const MatrixSnapshot *s,SDL_AudioDeviceID device,AudioState 
     w->array=ui->config.spatial=s->spatial;ui->config.insert=s->insert;
     audio->gallery_external_roots=ts_sample_pages_external_effect_roots(pages,bank);
     if(device)SDL_UnlockAudioDevice(device);
+    mx_restore_names(s,ui,pages);
     mx_refresh_tracker(pages,bank);mx_rows(pages,bank);mx_reveal_column(w->destination);w->dirty=1;return 1;
 }
 static void matrix_history_clear(void)
@@ -133,8 +171,8 @@ static void mx_undo(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
     int at=redo?w->history_cursor:w->history_cursor-1;if(at<0 || at>=w->history_count)return;
     MatrixSnapshot *now=mx_snapshot(device,audio,pages,bank);if(!now)return;
     MatrixSnapshot *saved=w->history[at];
-    if(saved->count==now->count && !memcmp(saved,now,offsetof(MatrixSnapshot,layout)) &&
-       !memcmp(saved->routes,now->routes,now->count*sizeof(now->routes[0]))) {
+    if(mx_audio_equal(saved,now)) {
+        mx_restore_names(saved,ui,pages);
         /* Undoing a view edit must not reapply controls or touch DSP history. */
         int split=audio->sister.matrix_layout.canvas_split;
         audio->sister.matrix_layout=saved->layout;audio->sister.matrix_layout.canvas_split=split;mx_rows(pages,bank);mx_reveal_column(w->destination);

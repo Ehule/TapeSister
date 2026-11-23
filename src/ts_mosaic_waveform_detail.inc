@@ -168,7 +168,7 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     int chars=style.chars;
     char label[100];int64_t tx=x+mosaic_detail_pixel(style.margin*sx);
     if(chars>0) {
-        mosaic_card_name(label,sizeof(label),e->name,chars);
+        mosaic_card_name(label,sizeof(label),mosaic_layer_name(ui,e),chars);
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel((style.compact?2:4)*sy),label,
             dim?color:ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),sx,sy);
     }

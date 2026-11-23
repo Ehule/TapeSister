@@ -1,3 +1,4 @@
+#include "tapesister/movement_name.h"
 /* Both raster paths choose detail from logical card size, never viewport
    clipping. Scrolling therefore translates the same pixels without reflow. */
 typedef struct {
@@ -23,6 +24,12 @@ static uint32_t mosaic_hover_color(uint32_t source)
     return mosaic_mix_color(source,ts_theme_color(active_palette(),TS_THEME_MOSAIC,
         TS_COLOR_TEXT,RGB(224,214,233)),.7f);
 }
+static const char *mosaic_layer_name(const TsUiState *ui,const TsMosaicEvent *e)
+{
+    int c=ui->mosaic_gallery_active;
+    return c>=0 && c<ui->mosaic_gallery_count?
+        ts_movement_layer(e->name,ui->mosaic_gallery_names[c]):e->name;
+}
 static void mosaic_card_name(char *out,size_t size,const char *name,int chars)
 {
     snprintf(out,size,"%.*s",chars,name);
@@ -41,12 +48,19 @@ static void mosaic_card_info(TsFramebuffer *fb,const TsUiState *ui)
     uint32_t background=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_BACKGROUND,RGB(11,13,16));
     if(!hovering) {
         char name[46];snprintf(name,sizeof(name),"%.45s",e->name);
-        rect(fb,164,32,274,7,background);text(fb,164,32,name,ink,1);return;
+        rect(fb,164,24,274,15,background);text(fb,164,24,name,ink,1);
+        if(strlen(e->name)>45)text(fb,164,32,e->name+45,ink,1);
+        return;
     }
     rect(fb,164,24,274,15,background);
     char line[100];
     if(ui->mosaic_gallery_count>0)snprintf(line,sizeof(line),"C%02d / %s",ui->mosaic_gallery_active+1,e->name);
     else snprintf(line,sizeof(line),"%s",e->name);
+    /* A long full name takes both rows; no invisible tail after 45 characters. */
+    if(strlen(e->name)>45) {
+        snprintf(line,sizeof(line),"%.45s",e->name);text(fb,164,24,line,ink,1);
+        text(fb,164,32,e->name+45,ink,1);return;
+    }
     line[45]=0;text(fb,164,24,line,ink,1);
     unsigned minutes=(unsigned)(e->start/60);double seconds=e->start-minutes*60;
     const char *state=e->muted?"MUTE":e->solo?"SOLO":e->source && e->source->video_path[0]?"VISUAL":e->live?"LIVE":e->looping?"LOOP":"ONCE";

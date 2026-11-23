@@ -151,6 +151,7 @@ static void assert_empty(void)
 #include "test_project_recovery_ui.inc"
 #include "test_project_reopen_ui.inc"
 #include "test_project_save_worker.inc"
+#include "test_album_workflow.inc"
 
 int main(int argc,char **argv)
 {
@@ -185,17 +186,23 @@ int main(int argc,char **argv)
     assert(ts_tapehead_sync(&pages,&bank,48000,error,sizeof(error)));
     assert(ts_tapehead_export(&pages.tracker,error,sizeof(error)));
     /* Optional user-project reproduction through the actual Open path. */
+    if(argc==2 && !strcmp(argv[1],"--album-workflow")){test_album_workflow(window);goto cleanup;}
     if(argc==2 && !strcmp(argv[1],"--save-worker")){test_project_save_worker(window);goto cleanup;}
     if(argc==3 && !strcmp(argv[1],"--profile-library")){profile_project_library(argv[2]);goto cleanup;}
     if(argc==3 && !strcmp(argv[1],"--save-large-worker")) {
         assert(load_instrument(0,&audio,&ui,&bank,&pages,&record,0,argv[2]));
         save_test_timeout=300000;test_project_save_worker(window);goto cleanup;
     }
-    if(argc==3 && (!strcmp(argv[1],"--open-project") || !strcmp(argv[1],"--mosaic-revert-mute"))) {
+    if(argc==3 && (!strcmp(argv[1],"--open-project") || !strcmp(argv[1],"--open-album") || !strcmp(argv[1],"--mosaic-revert-mute"))) {
         uint64_t disk_hash=0;
         for(int pass=0;pass<2;++pass) {
             int ok=load_instrument(0,&audio,&ui,&bank,&pages,&record,0,argv[2]);
             fprintf(stderr,"Project Open: %s\n",ui.status);assert(ok);
+            if(!strcmp(argv[1],"--open-album")) {
+                assert(pages.gallery && !strcmp(pages.gallery->canvas[0].name,"Before the Distance Across the Empty Room"));
+                assert(!strcmp(ui.mosaic->events[0].name,"Before the Distance Across the Empty Room - Glass Texture Layer"));
+                assert(!strcmp(audio.sister.matrix_layout.canvas[0].name,ui.mosaic->events[0].name));
+            }
             int cards=0,sources=0;double max_x=0;
             for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(ui.mosaic->events[i].id){++cards;max_x=fmax(max_x,ui.mosaic->events[i].x);}
             for(TsMosaicSource *s=ui.mosaic->sources;s;s=s->next)++sources;

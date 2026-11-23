@@ -3,7 +3,7 @@
 static int project_save_overlay_active(const TsUiState *ui)
 {
     return ui->project_save_window_id && (ui->project_overwrite_confirm_open ||
-        ui->browser.mode==TS_BROWSER_SAVE_RECIPE || ui->file_busy);
+        ui->browser.mode==TS_BROWSER_SAVE_RECIPE || ui->browser.mode==TS_BROWSER_EXPORT_PROJECT_ZIP || ui->file_busy);
 }
 static void project_save_overlay_poll(TsUiState *ui)
 {
