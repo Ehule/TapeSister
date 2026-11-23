@@ -168,7 +168,15 @@ static int project_save_start(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
     snprintf(w->path,sizeof(w->path),"%s",path);
     if(ui->browser.mode==TS_BROWSER_EXPORT_PROJECT_ZIP) {
         char parent[TS_BROWSER_PATH_MAX],stage[2048],stem[TS_BROWSER_NAME_MAX+1];
-        if(!parent_directory_of(path,parent,sizeof(parent)))goto failed;
+        /* Keep the private native bundle in the temporary directory. Long
+           destination paths must not multiply through native recovery names. */
+#ifdef _WIN32
+        DWORD length=GetTempPathA(sizeof(parent),parent);
+        if(!length || length>=sizeof(parent))goto failed;
+#else
+        const char *temporary=SDL_getenv("TMPDIR");
+        if(snprintf(parent,sizeof(parent),"%s",temporary && *temporary?temporary:"/tmp")>=(int)sizeof(parent))goto failed;
+#endif
         if(snprintf(stage,sizeof(stage),"%s/.tapesister-export-%llu",parent,(unsigned long long)SDL_GetPerformanceCounter())>=(int)sizeof(stage) || archive_mkdir(stage))goto failed;
         snprintf(w->archive_root,sizeof(w->archive_root),"%s",stage);
         snprintf(w->archive_destination,sizeof(w->archive_destination),"%s",path);

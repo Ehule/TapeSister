@@ -113,7 +113,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             }
             return 1;
         }
-        if(key==SDLK_g && (mod&KMOD_CTRL) && !(mod&(KMOD_ALT|KMOD_SHIFT|KMOD_GUI))) {
+        if(key==SDLK_g && (mod&KMOD_CTRL) && (mod&KMOD_SHIFT) && !(mod&(KMOD_ALT|KMOD_GUI))) {
             movement_navigator_open(ui,pages);return 1;
         }
         if(key==SDLK_F10)return 0; /* Keep the real origin for TrackSister's return path. */

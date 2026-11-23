@@ -65,7 +65,7 @@ static void test_album_workflow(SDL_Window *window)
     TsMatrixLayout *layout=&audio.sister.matrix_layout;
     layout->canvas_count=1;layout->canvas[0]=(TsFxCanvasPosition){.kind=3,.id=card_id,.canvas=canvas_id};
     strcpy(layout->canvas[0].name,card->name);
-    layout->heading_count=1;layout->headings[0].canvas=canvas_id;strcpy(layout->headings[0].label.text,"Old Movement - E minor");
+    layout->heading_count=1;layout->headings[0].canvas=canvas_id;layout->headings[0].label.scale=1;strcpy(layout->headings[0].label.text,"Old Movement - E minor");
     assert(matrix_show(0,&audio,&ui,&pages,&bank,-1,-1));fx_view(1,&pages,&bank);
     assert(mosaic_gallery_rename_movement(0,&audio,&ui,&pages,&bank,0,"Before the Distance"));
     assert(!strcmp(card->name,"Before the Distance - Glass Texture Layer") && !strcmp(custom->name,"Custom Layer"));
@@ -85,7 +85,7 @@ static void test_album_workflow(SDL_Window *window)
     assert(mosaic_gallery_rename_movement(0,&audio,&ui,&pages,&bank,0,"Before the Distance Across the Empty Room"));
     assert(strlen(card->name)>47 && !strcmp(layout->canvas[0].name,card->name));
     ui.mosaic_selected=card->id;card->duration=30;card->looping=1;ui.mosaic_scale=12;
-    mosaic_sources_refresh(&ui,&bank,&mosaic);album_layout_test(window);
+    mosaic_sources_refresh(&ui,&bank,&mosaic);ui.mosaic_selected=card->id;ui.mosaic_hover_event=card->id;album_layout_test(window);
     /* FX focusing is view-only. */
     int active=g->active,playing=ui.mosaic->playing;double time=ui.mosaic->time;
     movement_focus_fx(0,&audio,&ui,&pages,&bank,1);
@@ -94,10 +94,13 @@ static void test_album_workflow(SDL_Window *window)
     SDL_Event enter;SDL_zero(enter);enter.type=SDL_KEYDOWN;enter.key.keysym.sym=SDLK_RETURN;
     assert(mosaic_gallery_event(&enter,0,&audio,&ui,&bank,&mosaic,0,0,KMOD_NONE));assert(ui.mosaic_gallery_open);
     ui.mosaic_gallery_open=0;ui.project_modified=1;
+    album_key(window,SDLK_g,KMOD_CTRL|KMOD_SHIFT);assert(ui.mosaic_gallery_open);
+    ui.mosaic_gallery_open=0;
     album_key(window,SDLK_s,KMOD_CTRL|KMOD_SHIFT);
     assert(ui.browser.mode==TS_BROWSER_SAVE_RECIPE && !strcmp(ui.browser.filename,"old-project.tsr"));browser_cancel(&ui);
     /* Real browser -> pending operation -> worker export. It must contain edits
        and must not mark the current document saved or change its path. */
+    assert(ts_matrix_layout_valid(layout));
     uint64_t saved_hash=ui.saved_state_hash,saved_ui_hash=ui.saved_ui_hash;
     char active_path[sizeof(ui.project_path)];strcpy(active_path,ui.project_path);
     project_menu_action(&ui,3);assert(ui.browser.mode==TS_BROWSER_EXPORT_PROJECT_ZIP);
@@ -105,7 +108,8 @@ static void test_album_workflow(SDL_Window *window)
     strcpy(ui.browser.filename,"Unmade-Light.zip");ui.browser.filename_focus=1;
     browser_action(0,&audio,&ui,&bank,&selection,&pages,&record,0,&file,0);assert(file.active && file.mode==TS_BROWSER_EXPORT_PROJECT_ZIP);
     file.presented=1;worker_poll(0);assert(project_save_worker);
-    ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);worker_finish(0);
+    char stage[2048];strcpy(stage,project_save_worker->archive_root);
+    ui_sync_dialog_workspaces(&ui);assert(ui.mosaic_open);worker_finish(0);assert(!ts_browser_path_exists(stage));
     fprintf(stderr,"Album export: %s\n",ui.status);assert(strstr(ui.status,"EXPORTED ZIP"));
     assert(!strcmp(ui.project_path,active_path) && ui.project_modified);
     assert(ui.saved_state_hash==saved_hash && ui.saved_ui_hash==saved_ui_hash);
@@ -114,7 +118,7 @@ static void test_album_workflow(SDL_Window *window)
     FILE *sentinel=fopen("cancel.zip","wb");assert(sentinel);fputs("KEEP OLD ZIP",sentinel);fclose(sentinel);
     project_menu_action(&ui,3);strcpy(ui.browser.directory,cwd);strcpy(ui.browser.filename,"cancel.zip");ui.browser.filename_focus=1;ui.browser.overwrite_armed=1;
     browser_action(0,&audio,&ui,&bank,&selection,&pages,&record,0,&file,0);assert(file.active);file.presented=1;
-    SDL_AtomicSet(&save_test_gate,1);worker_poll(0);assert(project_save_worker);project_save_cancel(0);SDL_AtomicSet(&save_test_gate,0);worker_finish(0);
+    SDL_AtomicSet(&save_test_gate,1);worker_poll(0);assert(project_save_worker);strcpy(stage,project_save_worker->archive_root);project_save_cancel(0);SDL_AtomicSet(&save_test_gate,0);worker_finish(0);assert(!ts_browser_path_exists(stage));
     sentinel=fopen("cancel.zip","rb");assert(sentinel);char text[32]={0};assert(fread(text,1,31,sentinel)==12);fclose(sentinel);assert(!strcmp(text,"KEEP OLD ZIP"));
     browser_cancel(&ui);matrix_hide();
     puts("Album workflow: rename/undo, navigation, layout paint/input, CPU states, ZIP and cancellation passed.");

@@ -1,6 +1,7 @@
 # Album projects
 
-Open **MOVEMENTS** in the FX Canvas or **Gallery** in Mosaic (`Ctrl+G`). The
+Open **MOVEMENTS** in the FX Canvas (`Ctrl+Shift+G`) or **Gallery** in Mosaic
+(`Ctrl+G`). FX Canvas `Ctrl+G` continues to group the selection. The
 compact Gallery window can stay open with **PIN LIST**. A row's **FX** button
 focuses its routing without switching the playing canvas. Double-click its name
 or choose **ENTER** to use the normal Gallery transition. The sequencer continues
