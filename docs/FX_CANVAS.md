@@ -316,7 +316,7 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | Double-click Meta FX | Enter its chain; Escape or BACK TO FX returns |
 | F2 / right-click then Name / color | Edit name and color; with multiple selected cards, apply color to the selection with names disabled |
 | F2 on selected cables / right-click then Cable color | Edit cable color, or the selected cable group; colors save with the project and support Undo/Redo |
-| E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor |
+| E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor; press E again in FX Canvas to return to Mosaic |
 | Grave (backtick) in FX Canvas | Return directly to Mosaic |
 | Escape in FX Canvas | Return to Mosaic; active gestures/dialogs cancel first |
 
@@ -512,7 +512,11 @@ first have source cards in FX Canvas.
 Editors remember their entry workspace: Escape from a pedalboard, Sister Machine,
 Prism or Fallout returns to the window that opened it. A board opened from FX
 Canvas returns there; one opened with Tab from Mosaic returns to Mosaic. E returns
-to FX Canvas when KEYS is off and no text field owns the key. In Mosaic, Backspace
+to FX Canvas when KEYS is off and no text field owns the key. Press E again in the
+outer FX Canvas to return to Mosaic, carrying the card selection back. Holding E
+does not repeatedly switch windows. Both Linux and Windows accept the E letter
+or its physical key position; text editing and modified shortcuts keep their keys.
+In Mosaic, Backspace
 stops the engine without seeking; double Backspace within 500 ms also returns to
 the start. Escape is navigation/cancel and Space pauses with tails.
 
