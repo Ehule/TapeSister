@@ -54,10 +54,17 @@ static void gallery_view(void)
     fx_clear_selection();w->selection[0]=first;w->selection_count=1;
     key(SDLK_ESCAPE,0);assert(!w->visible && ui.mosaic_open && ui.mosaic_selected==cards[0]->id && !audio.engine_stopped);
     static SisterWindow editor;ts_sister_ui_model_init(&editor.model,&ui.config);
-    SDL_Event nav={0};nav.type=SDL_KEYDOWN;nav.key.windowID=SDL_GetWindowID(main_window);nav.key.keysym.sym=SDLK_e;
+    SDL_Event nav;SDL_zero(nav);nav.type=SDL_KEYDOWN;nav.key.windowID=SDL_GetWindowID(main_window);nav.key.keysym.sym=SDLK_e;
     ui.mosaic_source_keys=1;assert(!fx_navigation_event(&nav,main_window,0,&audio,&ui,&editor,&pages,&bank) && !w->visible);
     ui.mosaic_source_keys=0;assert(fx_navigation_event(&nav,main_window,0,&audio,&ui,&editor,&pages,&bank));
     assert(w->visible && w->canvas && fx_chosen(first));
+    TsMatrixEffectNode *navigation_live=audio.sister.matrix_effects.current[a];
+    nav.key.windowID=w->id;
+    assert(fx_navigation_event(&nav,main_window,0,&audio,&ui,&editor,&pages,&bank));
+    assert(!w->visible && ui.mosaic_selected==cards[0]->id && !audio.engine_stopped);
+    nav.key.windowID=SDL_GetWindowID(main_window);
+    assert(fx_navigation_event(&nav,main_window,0,&audio,&ui,&editor,&pages,&bank));
+    assert(w->visible && fx_chosen(first) && audio.sister.matrix_effects.current[a]==navigation_live);
     /* All Sister pages return to the workspace that opened them. Child editors
        must preserve that return target instead of replacing it with themselves. */
     assert(sister_window_ensure(&editor,&ui.config));

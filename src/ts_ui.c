@@ -3223,7 +3223,7 @@ void ts_ui_cpu_label(char *label, size_t size, double percent)
 int ts_ui_cpu_contains(const TsUiState *ui,int x,int y)
 {
     if(!ui || ui->tracker_open || ui->portal.open)return 0;
-    return x>=8 && x<94 && y>=386 && y<398;
+    return x>=8 && x<94 && y>=380 && y<398;
 }
 
 static void cpu_readout_render(TsFramebuffer *fb,const TsUiState *ui,int y)
@@ -3234,8 +3234,10 @@ static void cpu_readout_render(TsFramebuffer *fb,const TsUiState *ui,int y)
         ui->audio_cpu_percent>=90?TS_COLOR_WARNING:TS_COLOR_ACTIVITY,
         ui->audio_cpu_percent<0?RGB(160,149,172):ui->audio_cpu_percent>=100?RGB(235,119,125):
         ui->audio_cpu_percent>=90?RGB(223,188,114):RGB(138,221,180));
-    rect(fb,8,y,86,398-y,ts_theme_color(active_palette(),render_group,TS_COLOR_PANEL,RGB(24,23,29)));
-    text(fb,12,y+2,label,color,1);
+    (void)y;
+    rect(fb,8,380,86,18,ts_theme_color(active_palette(),render_group,TS_COLOR_PANEL,RGB(24,23,29)));
+    text(fb,12,381,label,color,1);
+    text(fb,12,390,ui->audio_activity[0]?ui->audio_activity:"WAITING",color,1);
 }
 
 #include "ts_mosaic_ui.inc"

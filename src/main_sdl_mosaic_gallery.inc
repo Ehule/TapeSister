@@ -1,3 +1,4 @@
+static Uint32 gallery_main_window_id;
 /* Gallery owns scene navigation only. Audio sees two published scene pointers;
    allocation/destruction and UI cache disposal stay outside the output lock. */
 static void mosaic_gallery_snapshot(TsUiState *ui,const TsMosaicGallery *g)
@@ -25,6 +26,43 @@ static void mosaic_gallery_snapshot(TsUiState *ui,const TsMosaicGallery *g)
         ui->gallery_step_start[i]=in;ui->gallery_step_end[i]=out;
     }
     if(g->sequence_fade)ui->mosaic_gallery_fade=g->fade_length;
+}
+static void movement_navigator_open(TsUiState *ui,TsSamplePages *pages)
+{
+    if(!ts_sample_pages_enable_gallery(pages,ui->status,sizeof(ui->status)))return;
+    ui->mosaic_open=1;ui->tracker_open=0;ui->mosaic_gallery_open=1;ui->gallery_sequence_open=0;
+    ui->mosaic_gallery_selected=pages->gallery->active;
+    mosaic_gallery_snapshot(ui,pages->gallery);
+    snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"FX: FOCUS ROUTING / DOUBLE-CLICK NAME: ENTER MOSAIC / PIN LIST: KEEP OPEN");
+}
+static void movement_focus_fx(SDL_AudioDeviceID device,AudioState *a,TsUiState *ui,
+    TsSamplePages *pages,TsInstrument *bank,int index)
+{
+    TsMosaicGallery *g=pages->gallery;if(!g || index<0 || index>=g->count)return;
+    if(!matrix_window.visible && !matrix_show(device,a,ui,pages,bank,-1,-1))return;
+    fx_view(1,pages,bank);fx_focus_movement(g->canvas[index].id,0,pages,bank);
+    SDL_ShowWindow(matrix_window.window);SDL_RaiseWindow(matrix_window.window);
+    snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"FX VIEW: %.47s / PLAYBACK UNCHANGED",g->canvas[index].name);
+}
+static int mosaic_gallery_rename_movement(SDL_AudioDeviceID device,AudioState *audio,
+    TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int index,const char *name)
+{
+    mx_bind_mosaic(ui,pages);matrix_window.layout=&audio->sister.matrix_layout;
+    MatrixSnapshot *before=mx_snapshot(device,audio,pages,bank);
+    if(!before) {
+        snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"RENAME CANCELLED: NOT ENOUGH MEMORY FOR UNDO");return 0;
+    }
+    if(device)SDL_LockAudioDevice(device);
+    int ok=ts_matrix_layout_rename_movement(matrix_window.layout,pages->gallery,index,name,
+        ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status));
+    if(device)SDL_UnlockAudioDevice(device);
+    if(ok) {
+        MatrixSnapshot *after=mx_snapshot(device,audio,pages,bank);
+        if(!after || !mx_equal(before,after))mx_push(before);else free(before);
+        free(after);mosaic_gallery_snapshot(ui,pages->gallery);
+        ui->project_modified=1;matrix_window.dirty=1;mx_rows(pages,bank);
+    } else free(before);
+    return ok;
 }
 static int mosaic_gallery_busy(AudioState *a,TsUiState *ui,MosaicController *c)
 {
@@ -159,6 +197,12 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         if(device)SDL_UnlockAudioDevice(device);
         return 1;
     }
+    if(key && !event->key.repeat && (mod&KMOD_CTRL) && k==SDLK_z && !ui->mosaic_gallery_rename) {
+        mx_bind_mosaic(ui,c->pages);matrix_window.layout=&a->sister.matrix_layout;
+        mx_undo(device,a,ui,c->pages,bank,(mod&KMOD_SHIFT)!=0);
+        mosaic_gallery_snapshot(ui,g);snprintf(ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status),"%s",matrix_window.status);
+        return 1;
+    }
     int selected=ui->mosaic_gallery_selected;
     if(selected<0 || selected>=g->count)selected=ui->mosaic_gallery_selected=g->active;
     if(ui->mosaic_gallery_rename) {
@@ -168,7 +212,7 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         if(key && k==SDLK_BACKSPACE && n)ui->mosaic_gallery_name[n-1]=0;
         if(key && k==SDLK_a && (mod&KMOD_CTRL))ui->mosaic_gallery_name[0]=0;
         if(key && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) {
-            if(ts_gallery_rename(g,selected,ui->mosaic_gallery_name,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status))) {
+            if(mosaic_gallery_rename_movement(device,a,ui,c->pages,bank,selected,ui->mosaic_gallery_name)) {
                 ui->mosaic_gallery_rename=0;SDL_StopTextInput();mosaic_gallery_snapshot(ui,g);
             }
         }
@@ -203,12 +247,28 @@ static int mosaic_gallery_event(const SDL_Event *event,SDL_AudioDeviceID device,
         selected=(selected+(k==SDLK_UP?-1:1)+g->count)%g->count;
         ui->mosaic_gallery_selected=selected;ui->mosaic_gallery_delete=0;
     }
+    if(left && y>=319 && y<335 && !ui->mosaic_gallery_rename) {
+        if(x>=312 && x<378){ui->mosaic_gallery_pinned=!ui->mosaic_gallery_pinned;return 1;}
+        if(x>=388 && x<472){movement_focus_fx(device,a,ui,c->pages,bank,selected);return 1;}
+    }
     if(left && y>=105 && y<265 && x>=126 && x<610) {
         int col=x>=370,row=(y-105)/20;int index=col*8+row;
-        if(index<g->count){ui->mosaic_gallery_selected=index;ui->mosaic_gallery_delete=0;}
+        if(index<g->count) {
+            ui->mosaic_gallery_selected=index;ui->mosaic_gallery_delete=0;
+            if(x>=126+col*244+212)movement_focus_fx(device,a,ui,c->pages,bank,index);
+            else if(event->button.clicks==2 && mosaic_gallery_enter(device,a,ui,bank,c,index)) {
+                ui->mosaic_gallery_open=ui->mosaic_gallery_pinned;
+                SDL_Window *main=SDL_GetWindowFromID(gallery_main_window_id);
+                if(main && matrix_window.visible)fx_return_mosaic(main,ui);
+            }
+        }
     }
     if((key && !event->key.repeat && (k==SDLK_RETURN || k==SDLK_KP_ENTER)) || (left && ts_ui_gallery_hit(TS_GALLERY_ENTER,x,y))) {
-        if(mosaic_gallery_enter(device,a,ui,bank,c,ui->mosaic_gallery_selected))ui->mosaic_gallery_open=0;
+        if(mosaic_gallery_enter(device,a,ui,bank,c,ui->mosaic_gallery_selected)) {
+            ui->mosaic_gallery_open=ui->mosaic_gallery_pinned;
+            SDL_Window *main=SDL_GetWindowFromID(gallery_main_window_id);
+            if(main && matrix_window.visible)fx_return_mosaic(main,ui);
+        }
         return 1;
     }
     if(left && ts_ui_gallery_hit(TS_GALLERY_CLOSE,x,y)){ui->mosaic_gallery_open=0;return 1;}

@@ -65,11 +65,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             if(e->button.button==SDL_BUTTON_LEFT && x>=20 && x<520 && y>=90) {
                 int row=(y-90)/32;
                 if(row<(w->gallery?w->gallery->count:0)+2) {
-                    fx_canvas.active_view=row==1;fx_canvas.movement=row>=2?w->gallery->canvas[row-2].id:0;
-                    memset(fx_canvas.revealed,0,sizeof(fx_canvas.revealed));
-                    fx_clear_selection();fx_clear_wires();w->effect_open=w->compressor_open=0;
-                    fx_build(pages,bank);fx_fit();
-                    snprintf(w->status,sizeof(w->status),"VIEW FILTER ONLY / PLAYBACK AND ROUTING UNCHANGED");
+                    fx_focus_movement(row>=2?w->gallery->canvas[row-2].id:0,row==1,pages,bank);
                 }
             }
             fx_canvas.movement_popup=0;
@@ -85,6 +81,15 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         }
         return 1;
     }
+    if(e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT && !fx_modal()) {
+        if(fx_toolbar_hit(FX_TOOL_NAVIGATOR,x,y)){movement_navigator_open(ui,pages);return 1;}
+        if(fx_toolbar_hit(FX_TOOL_PROJECT,x,y)) {
+            begin_project_menu(ui);
+            if(ui->project_overwrite_confirm_open || ui->browser.mode!=TS_BROWSER_CLOSED)ui->project_save_window_id=w->id;
+            return 1;
+        }
+        if(fx_toolbar_hit(FX_TOOL_LAYOUT,x,y)){begin_mosaic_layout(ui);return 1;}
+    }
     if(fx_canvas.popup)return fx_popup_event(e,x,y,wheel,device,audio,ui,pages,bank);
     if(fx_modal()) {
         if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE){fx_cancel_gesture();snprintf(w->status,sizeof(w->status),"CANVAS EDIT CANCELLED.");}
@@ -99,12 +104,17 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;int mod=e->key.keysym.mod;
         if(e->key.repeat && (fx_canvas_key(key) || (mod&KMOD_CTRL)))return 1;
-        if(key==SDLK_s && (mod&KMOD_CTRL) && !(mod&(KMOD_ALT|KMOD_GUI))) {
+        if(key==SDLK_s && (mod&KMOD_CTRL) && !(mod&KMOD_GUI)) {
             if(!ui_blocking_dialog_open_except_workspaces(ui)) {
-                begin_active_project_save(ui);
-                if(ui->project_overwrite_confirm_open || ui->browser.mode==TS_BROWSER_SAVE_RECIPE)ui->project_save_window_id=w->id;
+                if(mod&KMOD_ALT)begin_project_menu(ui);
+                else if(mod&KMOD_SHIFT)browser_open(ui,TS_BROWSER_SAVE_RECIPE);
+                else begin_active_project_save(ui);
+                if(ui->project_overwrite_confirm_open || ui->browser.mode==TS_BROWSER_SAVE_RECIPE || ui->browser.mode==TS_BROWSER_EXPORT_PROJECT_ZIP)ui->project_save_window_id=w->id;
             }
             return 1;
+        }
+        if(key==SDLK_g && (mod&KMOD_CTRL) && (mod&KMOD_SHIFT) && !(mod&(KMOD_ALT|KMOD_GUI))) {
+            movement_navigator_open(ui,pages);return 1;
         }
         if(key==SDLK_F10)return 0; /* Keep the real origin for TrackSister's return path. */
         if(key==SDLK_r && (mod&KMOD_CTRL) && !(mod&(KMOD_ALT|KMOD_GUI))) {

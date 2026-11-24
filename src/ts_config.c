@@ -109,6 +109,7 @@ void ts_config_init(TsConfig *config)
         config->sister_erase_percent = TS_SISTER_ERASE_PERCENT_DEFAULT;
         config->sister_ghost_percent = TS_SISTER_GHOST_PERCENT_DEFAULT;
         config->sister_window_maximized = 1;
+        config->mosaic_toolbar_percent=config->mosaic_sources_percent=100;
         config->sister_window_x = -1;
         config->sister_window_y = -1;
         config->mosaic_looper_x = config->mosaic_looper_y = -1;
@@ -546,6 +547,9 @@ int ts_config_load(TsConfig *config, const char *path,
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_x)) { snprintf(error, error_size, "Invalid Sister window X on config line %d", line_number); fclose(file); return 0; }
         } else if (strcmp(key, "sister_window_y") == 0) {
             if (!parse_clamped_integer(value, -32768, 32767, &loaded.sister_window_y)) { snprintf(error, error_size, "Invalid Sister window Y on config line %d", line_number); fclose(file); return 0; }
+        } else if (!strcmp(key,"mosaic_toolbar_percent") || !strcmp(key,"mosaic_sources_percent")) {
+            int *field=!strcmp(key,"mosaic_toolbar_percent")?&loaded.mosaic_toolbar_percent:&loaded.mosaic_sources_percent;
+            if(!parse_clamped_integer(value,50,100,field)){fclose(file);set_error(error,error_size,"Invalid Mosaic view size");return 0;}
         } else if (strcmp(key, "mosaic_volume_hidden") == 0) {
             if (!parse_clamped_integer(value, 0, 1, &loaded.mosaic_volume_hidden)) { snprintf(error,error_size,"Invalid Mosaic volume visibility on config line %d",line_number);fclose(file);return 0; }
         } else if (strcmp(key, "mosaic_looper_x") == 0) {
@@ -616,6 +620,9 @@ int ts_config_save(const TsConfig *config, const char *path,
         return 0;
     }
     int session_write_failed = fprintf(file,"; Automatic local Audio Health session recording (0 disables next launch).\nsession_log=%d\n",config->session_log)<0;
+    int layout_write_failed=fprintf(file,"mosaic_toolbar_percent=%d\nmosaic_sources_percent=%d\n",
+        config->mosaic_toolbar_percent>=50 && config->mosaic_toolbar_percent<=100?config->mosaic_toolbar_percent:100,
+        config->mosaic_sources_percent>=50 && config->mosaic_sources_percent<=100?config->mosaic_sources_percent:100)<0;
     int visual_write_failed = fprintf(file,"; Visualizer presentation only (project seed lives in sister-state.ini).\nvisual_quality=%d\nvisual_display=%d\nvisual_fullscreen=%d\n",config->visual_quality,config->visual_display,config->visual_fullscreen)<0;
     write_failed = fprintf(file,
                 "; TapeSister paths. Blank values disable that shortcut.\n"
@@ -901,7 +908,7 @@ int ts_config_save(const TsConfig *config, const char *path,
     if(!write_failed)write_failed=!ts_insert_write(file,&config->insert);
     if(!write_failed)write_failed=fprintf(file,"insert_send_device=%s\ninsert_return_device=%s\n",
         config->insert_send_device,config->insert_return_device)<0;
-    write_failed |= visual_write_failed | session_write_failed;
+    write_failed |= visual_write_failed | session_write_failed | layout_write_failed;
     if (fclose(file) != 0) write_failed = 1;
     if (write_failed) {
         set_error(error, error_size, "Could not finish writing config");

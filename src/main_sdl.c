@@ -7331,13 +7331,31 @@ static unsigned bank_modifiers(SDL_Keymod mod)
     return result;
 }
 
+static const char *path_basename(const char *);
 static void browser_open(TsUiState *ui, TsBrowserMode mode)
 {
-    const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "tapesister-recipe.tsr" :
+    char project_filename[TS_BROWSER_NAME_MAX+1];
+    const char *filename = mode == TS_BROWSER_SAVE_RECIPE ? "Untitled.tsr" :
+                           mode == TS_BROWSER_EXPORT_PROJECT_ZIP ? "Untitled.zip" :
                            mode == TS_BROWSER_SAVE_XM ? "tracksister-song.xm" :
                            mode == TS_BROWSER_TRACKER_PALETTE_EXPORT ? "tracksister.pal" :
                            mode == TS_BROWSER_SAVE_PRESET ? "my-process.tsp" :
                            mode == TS_BROWSER_EXPORT_WAV ? "tapesister-export.wav" : "";
+    if((mode==TS_BROWSER_SAVE_RECIPE || mode==TS_BROWSER_EXPORT_PROJECT_ZIP) && ui->project_path[0]) {
+        const char *base=path_basename(ui->project_path);size_t length=strlen(base);
+        if(length>4 && !SDL_strcasecmp(base+length-4,".tsr"))length-=4;
+        snprintf(project_filename,sizeof(project_filename),"%.*s%s",(int)SDL_min(length,sizeof(project_filename)-5),base,
+            mode==TS_BROWSER_EXPORT_PROJECT_ZIP?".zip":".tsr");filename=project_filename;
+        char directory[TS_BROWSER_PATH_MAX];
+        if(parent_directory_of(ui->project_path,directory,sizeof(directory))) {
+            const char *folder=path_basename(directory);
+            if(strlen(folder)==length && !strncmp(folder,base,length)) {
+                char parent[TS_BROWSER_PATH_MAX];
+                if(parent_directory_of(directory,parent,sizeof(parent)))snprintf(directory,sizeof(directory),"%s",parent);
+            }
+            snprintf(ui->browser.directory,sizeof(ui->browser.directory),"%s",directory);
+        }
+    }
     SDL_StopTextInput();
     if (ts_browser_open(&ui->browser, mode, filename)) {
         if (ts_browser_mode_edits_filename(mode)) SDL_StartTextInput();
@@ -7550,12 +7568,12 @@ static void ui_sync_dialog_workspaces(TsUiState *ui)
        and input handler both require mosaic_open, while other input is blocked. */
     if(ui_dialog_open(ui) && !ui->portal.open &&
        !ui->mosaic_array_open && !ui->mosaic_grid_open && !ui->mosaic_video_open && (!ui->mosaic_gallery_open || ui->mosaic_gallery_detached) && !ui->mosaic_marker_open && !ui->mosaic_views_open && !ui->mosaic_scatter_open && !ui->mosaic_spacing_confirm && !ui->mosaic_loop_open && !ui->mosaic_align_open && !ui->mosaic_pattern_choice &&
-       !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
+       !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE && ui->browser.mode!=TS_BROWSER_EXPORT_PROJECT_ZIP &&
        ui->browser.mode!=TS_BROWSER_LOAD_VIDEO && ui->browser.mode!=TS_BROWSER_LOAD_VISUAL_FOLDER && ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO &&
        ui->browser.mode!=TS_BROWSER_MOSAIC_VIDEO_POOL && ui->browser.mode!=TS_BROWSER_SAVE_XM && ui->browser.mode!=TS_BROWSER_IMPORT_CANVAS && ui->browser.mode!=TS_BROWSER_EXPORT_CANVAS &&
-       !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->mosaic_open=0;
-    if(ui_dialog_open(ui) && !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE &&
-       !(ui->file_busy && !strcmp(ui->file_busy_label,"SAVING")))ui->tracker_open=0;
+       !(ui->file_busy && (!strcmp(ui->file_busy_label,"SAVING") || !strcmp(ui->file_busy_label,"EXPORTING ZIP"))))ui->mosaic_open=0;
+    if(ui_dialog_open(ui) && !ui->project_overwrite_confirm_open && ui->browser.mode!=TS_BROWSER_SAVE_RECIPE && ui->browser.mode!=TS_BROWSER_EXPORT_PROJECT_ZIP &&
+       !(ui->file_busy && (!strcmp(ui->file_busy_label,"SAVING") || !strcmp(ui->file_busy_label,"EXPORTING ZIP"))))ui->tracker_open=0;
 }
 
 static int sister_performance_keys_allowed(const TsUiState *ui)
@@ -9069,6 +9087,30 @@ static void begin_active_project_save(TsUiState *ui)
         "SAVE IN NAMED BUNDLE; ORIGINAL TSR KEPT: %.104s":"CONFIRM OVERWRITE OF ACTIVE TSR PROJECT",bundled);
 }
 
+static int ts_audio_session_folder_url(const char *,char *,size_t);
+static void project_menu_action(TsUiState *ui,int action)
+{
+    if(action==1)begin_active_project_save(ui);
+    else if(action==2)browser_open(ui,TS_BROWSER_SAVE_RECIPE);
+    else if(action==3)browser_open(ui,TS_BROWSER_EXPORT_PROJECT_ZIP);
+    else if(action==4) {
+        char url[TS_BROWSER_PATH_MAX*3+16];
+        int ok=ui->project_path[0] && ts_audio_session_folder_url(ui->project_path,url,sizeof(url)) && !SDL_OpenURL(url);
+        snprintf(ui->status,sizeof(ui->status),"%s",ok?"OPENED PROJECT FOLDER":ui->project_path[0]?"COULD NOT OPEN PROJECT FOLDER":"SAVE THE PROJECT TO CHOOSE ITS FOLDER");
+    }
+}
+static void begin_project_menu(TsUiState *ui)
+{
+    if(ui->file_busy)return;
+    const SDL_MessageBoxButtonData buttons[]={
+        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,"Cancel"},
+        {0,4,"Open Project Folder"},{0,3,"Export ZIP"},{0,2,"Save As..."},
+        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,"Save"}};
+    char message[TS_BROWSER_PATH_MAX+200];
+    snprintf(message,sizeof(message),"Current project: %s\n\nSave: Ctrl+S   Save As: Ctrl+Shift+S\nExport ZIP includes your current edits and keeps this project active.",ui->project_path[0]?ui->project_path:"Untitled (not saved yet)");
+    SDL_MessageBoxData dialog={SDL_MESSAGEBOX_INFORMATION,SDL_GetKeyboardFocus(),"TapeSister - Project",message,5,buttons,NULL};
+    int action=0;if(SDL_ShowMessageBox(&dialog,&action)==0)project_menu_action(ui,action);
+}
 #include "main_sdl_browser_audition.inc"
 #include "main_sdl_folder_import.inc"
 
@@ -9299,7 +9341,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
         ok = load_instrument(device, audio, ui, instrument,
                              sample_pages, parked_record,
                              record_bank_active, pending->path);
-    } else if (pending->mode == TS_BROWSER_SAVE_RECIPE) {
+    } else if (pending->mode == TS_BROWSER_SAVE_RECIPE || pending->mode == TS_BROWSER_EXPORT_PROJECT_ZIP) {
         const TsInstrument *active_sample = record_bank_active ? NULL : instrument;
         const TsInstrument *record_bank = record_bank_active ?
                                           instrument : parked_record;
@@ -9313,7 +9355,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
             }
             SDL_WaitThread(w->thread,NULL);ok=w->ok;
             snprintf(error,sizeof(error),"%.159s",w->error);
-            if(ok) {
+            if(ok && pending->mode==TS_BROWSER_SAVE_RECIPE) {
                 ui->saved_state_hash=w->saved_hash;
                 ui->saved_ui_hash=w->saved_ui_hash;ui->project_check_ms=0;
                 ui->project_modified=paged_project_fingerprint(sample_pages,active_sample,record_bank,
@@ -9321,7 +9363,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
                 ts_tapehead_project_saved(&sample_pages->tracker);
             }
             if(w->close_requested) {
-                if(ok && !ui->project_modified)ui->exit_after_save=1;
+                if(ok && !ui->project_modified && pending->mode==TS_BROWSER_SAVE_RECIPE)ui->exit_after_save=1;
                 else {
                     ui->exit_confirm_open=1;ui->exit_for_new=0;
                     ui->exit_has_unsaved=paged_project_fingerprint(sample_pages,active_sample,record_bank,
@@ -9334,7 +9376,9 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
                 ui->exit_has_unsaved=1;ui->exit_choice=2;
             }
             snprintf(ui->status,sizeof(ui->status),ok?"SAVED TSR PROJECT %.104s":"SAVE FAILED: %.135s",ok?pending->path:error);
-            if(ok && w->control.recovery[0])snprintf(ui->status,sizeof(ui->status),
+            if(pending->mode==TS_BROWSER_EXPORT_PROJECT_ZIP)
+                snprintf(ui->status,sizeof(ui->status),ok?"EXPORTED ZIP %.112s":"ZIP EXPORT FAILED: %.129s",ok?pending->path:error);
+            if(ok && w->control.recovery[0] && pending->mode==TS_BROWSER_SAVE_RECIPE)snprintf(ui->status,sizeof(ui->status),
                 "SAVED TSR PROJECT; RECOVERY FILES KEPT: %.110s",path_basename(w->control.recovery));
             project_save_worker=NULL;project_save_worker_free(w);
         }else {
@@ -9426,7 +9470,7 @@ static void run_pending_file_operation(SDL_AudioDeviceID device,
             TsSessionLogStatus log;ts_session_log_status(&log);
             if(log.state!=TS_SESSION_OFF && !ts_session_log_export_project(ui->project_path,0))
                 snprintf(ui->status,sizeof(ui->status),"PROJECT SAVED; SESSION EXPORT UNAVAILABLE - CHECK F12");
-            show_overlay(ui, "SAVED", 550u);
+            show_overlay(ui, "SAVED", 1500u);
         }
         SDL_StopTextInput();
         ts_browser_close(browser);
@@ -9465,14 +9509,28 @@ static void browser_activate_selection(SDL_AudioDeviceID device, AudioState *aud
 
 /* The full interface grows with the window, as it did before the layout audit.
    Keep this presentation path shared by every main-window editor. */
+#include "main_sdl_mosaic_layout.inc"
 static void main_surface_copy(SDL_Renderer *renderer,SDL_Texture *texture)
-{SDL_RenderCopy(renderer,texture,NULL,NULL);}
+{
+    if(renderer!=main_layout_renderer || !mosaic_layout_active()){SDL_RenderCopy(renderer,texture,NULL,NULL);return;}
+    TsMosaicLayout layout=mosaic_layout_current();int width,height;SDL_GetRendererOutputSize(renderer,&width,&height);
+    SDL_SetRenderDrawColor(renderer,11,13,16,255);SDL_RenderClear(renderer);
+    for(int i=0;i<TS_MOSAIC_LAYOUT_PARTS;++i) {
+        TsUiRect s=layout.source[i],d=layout.destination[i];
+        SDL_Rect source={s.x,s.y,s.w,s.h},destination={d.x*width/640,d.y*height/400,
+            (d.x+d.w)*width/640-d.x*width/640,(d.y+d.h)*height/400-d.y*height/400};
+        SDL_RenderCopy(renderer,texture,&source,&destination);
+    }
+}
 static void logical_mouse(SDL_Window *window, int raw_x, int raw_y, int *x, int *y)
 {
     int ww, wh;
     SDL_GetWindowSize(window, &ww, &wh);
     *x = raw_x * TS_UI_WIDTH / ww;
     *y = raw_y * TS_UI_HEIGHT / wh;
+    if(window==main_layout_window && mosaic_layout_active()) {
+        TsMosaicLayout layout=mosaic_layout_current();ts_mosaic_layout_inverse(&layout,x,y);
+    }
 }
 
 typedef struct {
@@ -9596,6 +9654,7 @@ static int ts_audio_health_event(const SDL_Event *event, SDL_Window *main_window
 static void ts_audio_health_update(AudioState *audio, const TsUiState *ui);
 static void ts_audio_cpu_update(AudioState *audio, TsUiState *ui, Uint32 now);
 static int ts_audio_health_show_modules(TsUiState *ui);
+static char ts_audio_activity[24]="WAITING";
 static double ts_audio_cpu_percent = -1; /* UI thread only; shared with FX Canvas. */
 static int ts_audio_health_drawable(void);
 static void ts_audio_health_reset(AudioState *audio);
@@ -9893,6 +9952,7 @@ static void native_waveform_copy(SDL_Renderer *renderer, SDL_Texture *textures[2
             /* Recreate and upload fully next time after an upload failure. */
             SDL_DestroyTexture(textures[i]);textures[i]=NULL;continue;
         }
+        mosaic_layout_detail_rect(renderer,&target);
         SDL_RenderCopy(renderer,textures[i],NULL,&target);
     }
 }
@@ -9916,7 +9976,7 @@ static void native_looper_copy(SDL_Renderer *renderer,SDL_Texture **texture,cons
     if(upload && SDL_UpdateTexture(*texture,NULL,circle->pixels,circle->width*sizeof(uint32_t))) {
         SDL_DestroyTexture(*texture);*texture=NULL;return;
     }
-    SDL_Rect target={circle->x,circle->y,circle->width,circle->height};SDL_RenderCopy(renderer,*texture,NULL,&target);
+    SDL_Rect target={circle->x,circle->y,circle->width,circle->height};mosaic_layout_detail_rect(renderer,&target);SDL_RenderCopy(renderer,*texture,NULL,&target);
 }
 static void sister_set_parameter(TsSisterParameters *parameters,
                                  int parameter, float amount)
@@ -14728,6 +14788,8 @@ int main(int argc, char **argv)
     if (!renderer && window) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     texture = renderer ? SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                             TS_UI_WIDTH, TS_UI_HEIGHT) : NULL;
+    main_layout_ui=&ui;main_layout_renderer=renderer;main_layout_window=window;
+    gallery_main_window_id=window?SDL_GetWindowID(window):0;
     if (renderer != NULL) {
         SDL_RendererInfo info;
         SDL_zero(info);
@@ -15284,9 +15346,14 @@ int main(int argc, char **argv)
                     continue;
                 }
                 if (workspace_tab_event(&event,window,&sister_window,&ui))continue;
+                if(global_key==SDLK_u && (global_mod&KMOD_CTRL) && (global_mod&KMOD_ALT) && !modal_key_owner) {
+                    begin_mosaic_layout(&ui);continue;
+                }
                 if (global_key == SDLK_s && (global_mod & KMOD_CTRL) != 0 &&
                     !modal_key_owner) {
-                    begin_active_project_save(&ui);
+                    if(global_mod&KMOD_ALT)begin_project_menu(&ui);
+                    else if(global_mod&KMOD_SHIFT)browser_open(&ui,TS_BROWSER_SAVE_RECIPE);
+                    else begin_active_project_save(&ui);
                     application_window_focus(window,&sister_window);
                     continue;
                 }
@@ -17795,8 +17862,8 @@ int main(int argc, char **argv)
                 } else if (y >= 4 && y < 28 && x >= TS_UI_FT2_X && x < TS_UI_FT2_X + TS_UI_FT2_W) {
                     begin_exchange_send(&ui, &instrument, &sample_pages);
                 } else if (y >= 4 && y < 28 && x >= 360 && x < 398) {
-                    browser_open(&ui, ui.show_ingredients && !ui.mosaic_open ?
-                                 TS_BROWSER_SAVE_PRESET : TS_BROWSER_SAVE_RECIPE);
+                    if(ui.show_ingredients && !ui.mosaic_open)browser_open(&ui,TS_BROWSER_SAVE_PRESET);
+                    else begin_project_menu(&ui);
                 } else if (y >= 4 && y < 28 && x >= 402 && x < 460) {
                     begin_export_choice(&ui);
                 } else if (x >= 240 && x < 302 && y >= 42 && y < 64) {

@@ -15,7 +15,7 @@ enum { TS_FX_CANVAS_SOURCE_POSITIONS=TS_GALLERY_LIMIT*TS_MOSAIC_EVENTS+256,
        TS_FX_CANVAS_POSITIONS=TS_FX_CANVAS_SOURCE_POSITIONS+TS_MATRIX_ROWS+TS_MATRIX_DESTINATIONS };
 enum { TS_FX_CANVAS_SPLIT_MIN=640, TS_FX_CANVAS_SPLIT_DEFAULT=1000, TS_FX_CANVAS_SPLIT_MAX=1040 };
 /* Zero scale is the legacy/default size; saved custom sizes use .25..4. */
-typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; uint32_t color; char name[48]; uint32_t group; } TsFxCanvasPosition;
+typedef struct { uint64_t id; int kind; float x,y,scale; uint64_t canvas; uint32_t color; char name[64]; uint32_t group; } TsFxCanvasPosition;
 enum { TS_FX_LABEL_LIMIT=64, TS_FX_LABEL_TEXT=256 };
 typedef struct {float x,y,scale;char text[TS_FX_LABEL_TEXT];uint32_t group;} TsFxCanvasLabel;
 enum { TS_FX_HEADING_LIMIT=TS_GALLERY_LIMIT+1 };
@@ -47,4 +47,6 @@ void ts_matrix_layout_default(TsMatrixLayout *layout);
 int ts_matrix_layout_valid(const TsMatrixLayout *layout);
 int ts_matrix_layout_write(FILE *file,const TsMatrixLayout *layout);
 int ts_matrix_layout_read(TsMatrixLayout *layout,const char *key,const char *value);
+int ts_matrix_layout_rename_movement(TsMatrixLayout *,TsMosaicGallery *,int,
+    const char *,char *,size_t);
 #endif

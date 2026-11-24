@@ -367,6 +367,15 @@ static double ts_audio_cpu_load(const TsRealtimeDiagnosticsSnapshot *s,uint64_t 
 
 /* Four UI reads/second of the already published counters. No profiling, audio
    lock, extra callback clocks or renderer work is needed for the small meter. */
+static const char *ts_audio_activity_name(int output,int stopped,int transport,int voices,int monitor)
+{
+    if(!output)return "NO OUTPUT";
+    if(stopped)return "IDLE";
+    if(transport)return "PLAYING";
+    if(voices)return "VOICES";
+    if(monitor)return "LIVE INPUT";
+    return "FX RUNNING";
+}
 static void ts_audio_cpu_update(AudioState *audio,TsUiState *ui,Uint32 now)
 {
     static Uint32 last;static uint32_t generation;static int sampled;
@@ -380,6 +389,12 @@ static void ts_audio_cpu_update(AudioState *audio,TsUiState *ui,Uint32 now)
        (percent>=90)!=(ts_audio_cpu_percent>=90) ||
        (percent>=100)!=(ts_audio_cpu_percent>=100))matrix_window.dirty=1;
     ui->audio_cpu_percent=ts_audio_cpu_percent=percent;
+    const char *activity=ts_audio_activity_name(ts_audio_output_is_available(),audio->engine_stopped,
+        ui->mosaic_playing || ui->tracker_running || (ui->mosaic_live_loops && !ui->mosaic_live_paused),
+        ui->playback_active,ts_input_monitor_enabled(audio->input_monitor));
+    if(strcmp(ts_audio_activity,activity))matrix_window.dirty=1;
+    snprintf(ts_audio_activity,sizeof(ts_audio_activity),"%s",activity);
+    snprintf(ui->audio_activity,sizeof(ui->audio_activity),"%s",activity);
 }
 
 /* Derive a recent module window from the existing sampled profiler totals.
@@ -422,8 +437,8 @@ static void ts_audio_health_progress_report(const AudioState *audio,char *text,s
     double age=ts_audio_health_callback_age(&ts_health.snapshot,now);
     if(!audio->realtime_diagnostics_enabled)snprintf(text,size,"Callback progress: telemetry unavailable\n");
     else if(age<0)snprintf(text,size,"Callback progress: no timed completion observed since reset/device restart\n");
-    else snprintf(text,size,"Callback progress: %s; last completion %.3f s ago\n",
-        age<1?"recent":"NO RECENT COMPLETION",age);
+    else snprintf(text,size,"Engine activity: %s\nCallback progress: %s; last completion %.3f s ago\n",
+        ts_audio_activity,age<1?"recent":"NO RECENT COMPLETION",age);
     size_t used=strlen(text);
     if(ts_control_timing.depth && ts_control_timing.audio==audio) {
         double held=audio->realtime_counter_frequency && now>ts_control_timing.acquired?
@@ -645,8 +660,14 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
 {
     TsProfileSnapshot s; ts_profile_snapshot(&s); char line[160];
     ts_audio_profile_recent(&s);
-    snprintf(line,sizeof(line),"%.1F S  %s; SAMPLED 1/%d AUDIO BLOCKS",s.seconds,
-        ts_health.profile_effects==2?"BOARD CHILDREN":ts_health.profile_effects?"MATRIX FX":"INCLUSIVE WALL TIME",ts_health.profile_effects==2?640:32);
+    int top=-1;
+    if(ts_health.recent_profile_ready)for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)
+        if(ts_health.effect_cpu[i]>0 && (top<0 || ts_health.effect_cpu[i]>ts_health.effect_cpu[top]))top=i;
+    if(top>=0) {
+        char name[256];ts_profile_effect_label(&s.effect[top].identity,name,sizeof(name));
+        snprintf(line,sizeof(line),"%.10s / TOP: %.45s %.1F%%",ts_audio_activity,name,ts_health.effect_cpu[top]);
+    } else snprintf(line,sizeof(line),"%s / %s",ts_audio_activity,
+        ts_health.recent_profile_ready?"NO RECENT MATRIX FX WORK":"MEASURING RECENT PROCESSOR LOAD...");
     cfg_text(fb,20,42,line,dim);
     if(ts_health.profile_effects==2) {
         cfg_text(fb,20,58,"BOARD / CHILD / EFFECT",ink);cfg_text(fb,310,58,"AVG/BLOCK",ink);cfg_text(fb,400,58,"PEAK/BLOCK",ink);cfg_text(fb,500,58,"MS/S",ink);cfg_text(fb,564,58,"SAMPLES",ink);
@@ -693,7 +714,9 @@ static void ts_audio_profile_draw(TsFramebuffer *fb, uint32_t ink, uint32_t dim)
             snprintf(line,sizeof(line),"%llu",(unsigned long long)v->samples);cfg_text(fb,564,y,line,dim);
         }
         if(!row)cfg_text(fb,20,92,"WAITING FOR SAMPLED MATRIX EFFECT PROCESSING",dim);
-        cfg_text(fb,20,320,"CPU%: RECENT ~1S; OTHER COLUMNS: SINCE PROFILE START / RESET.",dim);
+        cfg_text(fb,20,320,!strcmp(ts_audio_activity,"FX RUNNING")?
+            "TRANSPORT STOPPED; FX MAY PROCESS TAILS / LIVE SOURCES. DOUBLE BACKSPACE: IDLE.":
+            "CPU%: RECENT ~1S; OTHER COLUMNS: SINCE PROFILE START / RESET.",dim);
         snprintf(line,sizeof(line),"ROWS %d-%d / %d / WHEEL OR PGUP/PGDN / COPY & SAVE: ALL ROWS",total?ts_health.profile_scroll+1:0,ts_health.profile_scroll+row,total);
         cfg_text(fb,20,332,line,dim);
         return;
@@ -775,7 +798,7 @@ static void ts_audio_health_draw(TsFramebuffer *fb, const TsUiState *ui,
     }
     cfg_text(fb, 490, 20, state, active ? effect : dim);
     const char *driver = ts_native_current_driver();
-    snprintf(line, sizeof(line), "%.16s / %.78s", driver ? driver : "NONE",
+    snprintf(line, sizeof(line), "%s / %.16s / %.60s",ts_audio_activity,driver ? driver : "NONE",
              ts_output_endpoint.active_name[0] ? ts_output_endpoint.active_name : "NO ACTIVE DEVICE");
     cfg_text(fb, 20, 40, line, ink);
     snprintf(line, sizeof(line), "%u HZ / %u FR / %.3F MS   TOTALS: RESET/RESTART",

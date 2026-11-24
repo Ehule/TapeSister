@@ -467,6 +467,8 @@ typedef struct {
     uint32_t performance_hover_due;
     /* UI-only, recent audio callback load; negative means unavailable. */
     double audio_cpu_percent;
+    int mosaic_gallery_pinned;
+    char audio_activity[24];
     TsKeyboardMask active_notes;
     TsKeyboardSequenceSettings keyboard_sequence;
     TsKeyboardSequenceSettings keyboard_sequence_clipboard;

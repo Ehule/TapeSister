@@ -19,7 +19,7 @@ static int gallery_window_create(int sequence)
     GalleryWindow *w=&gallery_windows[sequence];if(w->window)return 1;
     SDL_Rect content=gallery_window_content(sequence);
     w->window=SDL_CreateWindow(sequence?"TapeSister - Gallery Sequencer":"TapeSister - Gallery",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
-        content.w*2,(content.h+32)*2,TS_WORKSPACE_WINDOW_FLAGS);
+        content.w*3/2,(content.h+32)*3/2,sequence?TS_WORKSPACE_WINDOW_FLAGS:SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
     if(w->window){w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_ACCELERATED);
         if(!w->renderer)w->renderer=SDL_CreateRenderer(w->window,-1,SDL_RENDERER_SOFTWARE);}
     if(w->renderer)w->texture=SDL_CreateTexture(w->renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STREAMING,TS_UI_WIDTH,TS_UI_HEIGHT);

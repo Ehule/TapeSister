@@ -75,7 +75,7 @@ static void board_operations(void)
     sister_board_open(0);sister_board_sync(&audio,&ui,&sister);
     int count=audio.sister.parameters.fx.slot_count;board_click(85,342);assert(audio.sister.parameters.fx.slot_count==count+1);
     int width,height;SDL_GetWindowSize(sister.window,&width,&height);
-    SDL_Event wheel={0};wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=sister.window_id;wheel.wheel.y=2;
+    SDL_Event wheel;SDL_zero(wheel);wheel.type=SDL_MOUSEWHEEL;wheel.wheel.windowID=sister.window_id;wheel.wheel.y=2;
 #if SDL_VERSION_ATLEAST(2,26,0)
     wheel.wheel.mouseX=54*width/640;wheel.wheel.mouseY=342*height/400;
 #else

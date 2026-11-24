@@ -2,6 +2,7 @@
    events. Captures/edit workers must finish first. PCM/history/source ownership
    stays with the pinned document until join; only metadata is copied. Audio
    playback may mutate its own runtime, never these immutable sample buffers. */
+#include "main_sdl_project_archive.inc"
 typedef struct {
     SDL_Thread *thread;
     SDL_mutex *mutex;
@@ -14,6 +15,7 @@ typedef struct {
     TsSaveControl control;
     TsMosaic *scene[TS_GALLERY_LIMIT];
     int scene_count,ok,close_requested;
+    char archive_root[2048],archive_destination[TS_BROWSER_PATH_MAX];
     uint64_t saved_hash,saved_ui_hash;
     Uint32 last_progress,last_journal;
     char path[TS_BROWSER_PATH_MAX],error[1024],message[160],asset[160],journal_path[2048];
@@ -78,6 +80,7 @@ static void project_save_worker_free(ProjectSaveWorker *w)
     free(w->pages.pages);free(w->active);free(w->record);free(w->sister);
     free(w->pages.gallery);
     for(int i=0;i<w->scene_count;++i)free(w->scene[i]);
+    if(w->archive_root[0])project_archive_walk(w->archive_root,"",NULL,1);
     if(w->journal)fclose(w->journal);
     if(w->mutex)SDL_DestroyMutex(w->mutex);
     free(w);
@@ -114,10 +117,17 @@ static int project_save_main(void *data)
         w->ok=ts_sample_pages_save_project_controlled(&w->pages,w->active,w->record,&w->state,
             w->path,&w->control,w->error,sizeof(w->error));
         ts_session_log_project_save_end();
+        if(w->ok && w->archive_destination[0]) {
+            w->control.committing=0;
+            w->ok=project_archive_zip(w->archive_root,w->archive_destination,&w->control,w->error,sizeof(w->error));
+        }
     }
     ts_session_log_event(w->ok?"project_save_success":w->control.was_cancelled?"project_save_cancelled":"project_save_failure",
         "path=%s error=%s recovery=%s journal=%s",w->path,w->error,w->control.recovery,w->journal_path);
     if(w->journal){fprintf(w->journal,"RESULT\t%s\t%s\nRECOVERY\t%s\n",w->ok?"SUCCESS":w->control.was_cancelled?"CANCELLED":"FAILED",w->error,w->control.recovery);fflush(w->journal);}
+    /* Private export assets can be numerous. Retire them on the worker, before
+       releasing the pinned document, rather than blocking a UI completion tick. */
+    if(w->archive_root[0] && project_archive_walk(w->archive_root,"",NULL,1))w->archive_root[0]=0;
     SDL_AtomicSet(&w->done,1);return 0;
 }
 static int project_save_start(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,
@@ -156,12 +166,30 @@ static int project_save_start(SDL_AudioDeviceID device,AudioState *audio,TsUiSta
     if(device)SDL_UnlockAudioDevice(device);
     w->state=*state;
     snprintf(w->path,sizeof(w->path),"%s",path);
+    if(ui->browser.mode==TS_BROWSER_EXPORT_PROJECT_ZIP) {
+        char parent[TS_BROWSER_PATH_MAX],stage[2048],stem[TS_BROWSER_NAME_MAX+1];
+        /* Keep the private native bundle in the temporary directory. Long
+           destination paths must not multiply through native recovery names. */
+#ifdef _WIN32
+        DWORD length=GetTempPathA(sizeof(parent),parent);
+        if(!length || length>=sizeof(parent))goto failed;
+#else
+        const char *temporary=SDL_getenv("TMPDIR");
+        if(snprintf(parent,sizeof(parent),"%s",temporary && *temporary?temporary:"/tmp")>=(int)sizeof(parent))goto failed;
+#endif
+        if(snprintf(stage,sizeof(stage),"%s/.tapesister-export-%llu",parent,(unsigned long long)SDL_GetPerformanceCounter())>=(int)sizeof(stage) || archive_mkdir(stage))goto failed;
+        snprintf(w->archive_root,sizeof(w->archive_root),"%s",stage);
+        snprintf(w->archive_destination,sizeof(w->archive_destination),"%s",path);
+        snprintf(stem,sizeof(stem),"%s",path_basename(path));size_t len=strlen(stem);
+        if(len>4 && !SDL_strcasecmp(stem+len-4,".zip"))stem[len-4]=0;
+        if(!stem[0] || snprintf(w->path,sizeof(w->path),"%s/%s/%s.tsr",stage,stem,stem)>=(int)sizeof(w->path))goto failed;
+    }
     w->control.userdata=w;w->control.cancelled=project_save_cancelled;w->control.progress=project_save_progress;
     w->control.sample_hash=project_save_cached_hash;
     w->thread=SDL_CreateThread(project_save_main,"TapeSister Save",w);if(!w->thread)goto failed;
     project_save_worker=w;
     ui->file_busy=1;
-    snprintf(ui->file_busy_label,sizeof(ui->file_busy_label),"SAVING");
+    snprintf(ui->file_busy_label,sizeof(ui->file_busy_label),"%s",w->archive_destination[0]?"EXPORTING ZIP":"SAVING");
     snprintf(ui->file_busy_detail,sizeof(ui->file_busy_detail),"PREPARING PORTABLE PROJECT");
     snprintf(ui->file_busy_asset,sizeof(ui->file_busy_asset),"%.150s",path_basename(path));
     return 1;

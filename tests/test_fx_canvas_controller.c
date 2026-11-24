@@ -563,6 +563,7 @@ static void sunvox_browser(const char *dir)
 #include "test_fx_canvas_context.inc"
 #include "test_autopan_controller.inc"
 #include "test_fx_canvas_history.inc"
+#include "test_fx_navigation.inc"
 
 int main(int argc,char **argv)
 {
@@ -571,6 +572,7 @@ int main(int argc,char **argv)
     main_window=SDL_CreateWindow("Mosaic",0,0,1280,800,0);assert(main_window);
     ts_ui_init(&ui);ts_instrument_init(&bank);char error[256];assert(ts_sample_pages_init(&pages,error,sizeof(error)));
     ui.mosaic=pages.mosaic;ui.mosaic_open=1;ts_sister_runtime_init(&audio.sister);audio.output_rate=48000;audio.output_device_channels=2;
+    navigation_keys();
     TsMatrixControls c=audio.sister.matrix.controls;c.enabled=1;
     int rev=ts_matrix_effect_add(&c,TS_SISTER_FX_REVERB),trans=ts_matrix_effect_add(&c,TS_SISTER_FX_TRANSIENT),
         grain=ts_matrix_effect_add(&c,TS_SISTER_FX_GRAIN),dist=ts_matrix_effect_add(&c,TS_SISTER_FX_DISTORTION),

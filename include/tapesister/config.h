@@ -212,6 +212,7 @@ typedef struct {
     int sister_window_maximized;
     int sister_window_x;
     int sister_window_y;
+    int mosaic_toolbar_percent, mosaic_sources_percent; /* Presentation sizes, 50..100. */
     int mosaic_volume_hidden; /* Display preference; envelope stays active. */
     int mosaic_looper_x, mosaic_looper_y; /* -1: dock at the right by default. */
     int dsp_factory_overridden[TS_DSP_FACTORY_RECIPE_COUNT];
