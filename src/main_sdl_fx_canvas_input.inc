@@ -89,6 +89,9 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             return 1;
         }
         if(fx_toolbar_hit(FX_TOOL_LAYOUT,x,y)){begin_mosaic_layout(ui);return 1;}
+        if(!fx_canvas.meta && fx_toolbar_hit(FX_TOOL_FLOW,x,y)) {
+            l->canvas_flow=!l->canvas_flow;w->dirty=1;return 1;
+        }
     }
     if(fx_canvas.popup)return fx_popup_event(e,x,y,wheel,device,audio,ui,pages,bank);
     if(fx_modal()) {

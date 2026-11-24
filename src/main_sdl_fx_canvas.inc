@@ -4,7 +4,7 @@ static void begin_mosaic_layout(TsUiState *);
 /* A spatial view of the Matrix's exact routes. Only the existing Matrix
    transactions may change audio; positions, pan and zoom are view metadata. */
 enum { FX_GRID=32, FX_NODE_W=210, FX_NODE_H=86, FX_RIGHT=1000, FX_DRAG_NODE=100, FX_DRAG_WIRE, FX_DRAG_PAN, FX_DRAG_BOX, FX_DRAG_GRAB, FX_DRAG_SCALE, FX_DRAG_SHIFT_NODE, FX_DRAG_WIRE_BOX, FX_DRAG_DIVIDER, FX_DRAG_CONTROL=120, FX_DRAG_MACRO=140, FX_DRAG_LABEL=151, FX_DRAG_LABEL_GRAB, FX_DRAG_LABEL_SCALE, FX_DRAG_GROUP };
-typedef struct { MatrixRow row; int at,destination,rank,outside_filter; float x,y,scale; } FxCanvasNode;
+typedef struct { MatrixRow row; int at,destination,rank,outside_filter; float x,y,scale,level; } FxCanvasNode;
 typedef struct { MatrixRow source; int destination; uint32_t target_id; } FxCanvasWire;
 typedef struct { FxCanvasWire *items; int count,capacity; } FxWireList;
 static struct {
@@ -35,7 +35,7 @@ static struct {
 #define FX_BOTTOM (fx_canvas.meta?682:MATRIX_H-(fx_canvas.help?144:48))
 enum { FX_TOOL_MATRIX,FX_TOOL_UNDO,FX_TOOL_REDO,FX_TOOL_ADD,FX_TOOL_FIT,
        FX_TOOL_CLOSE,FX_TOOL_HELP,FX_TOOL_EDITOR,FX_TOOL_MOVEMENT,
-       FX_TOOL_CURVES,FX_TOOL_SNAP,FX_TOOL_CLEAR,FX_TOOL_CPU,FX_TOOL_NAVIGATOR,FX_TOOL_PROJECT,FX_TOOL_LAYOUT,FX_TOOL_COUNT };
+       FX_TOOL_CURVES,FX_TOOL_SNAP,FX_TOOL_CLEAR,FX_TOOL_CPU,FX_TOOL_NAVIGATOR,FX_TOOL_PROJECT,FX_TOOL_LAYOUT,FX_TOOL_FLOW,FX_TOOL_COUNT };
 static TsUiRect fx_toolbar_rect(int tool)
 {
     static const char *labels[]={"MATRIX F9","UNDO","REDO","+ EFFECT","FIT","MOSAIC","HELP","EDITOR"};
@@ -51,6 +51,7 @@ static TsUiRect fx_toolbar_rect(int tool)
     if(tool==FX_TOOL_NAVIGATOR)return ts_ui_control_rect(744,56,"MOVEMENTS",2,0);
     if(tool==FX_TOOL_PROJECT)return ts_ui_control_rect(880,56,"PROJECT",2,0);
     if(tool==FX_TOOL_LAYOUT)return ts_ui_control_rect(992,56,"VIEW SIZES",2,0);
+    if(tool==FX_TOOL_FLOW)return (TsUiRect){1132,56,128,TS_UI_TOOLBAR_HEIGHT};
     return (TsUiRect){MATRIX_W-200,MATRIX_H-36,180,TS_UI_TOOLBAR_HEIGHT};
 }
 static int fx_toolbar_hit(int tool,int x,int y)
@@ -150,6 +151,28 @@ static int fx_row_playing(MatrixRow row)
 }
 static int fx_filter_source(MatrixRow row)
 {return fx_canvas.active_view?fx_row_playing(row):row.kind==3 && row.canvas==fx_canvas.movement;}
+static float fx_row_level(MatrixRow row)
+{
+    MatrixWindow *w=&matrix_window;
+    if(row.kind==3 && row.index>=0 && row.index<TS_MOSAIC_EVENTS) {
+        TsMosaic *m=mx_card_scene(row);
+        for(int i=0;m && i<2;++i) {
+            const MatrixPlayingCards *p=&w->playing[i];
+            if(p->canvas==row.canvas && p->epoch==m->epoch && p->signal_card[row.index]==row.tile)
+                return p->peak[row.index];
+        }
+    } else if(row.kind==0 && row.index>=0 && row.index<TS_TRACKER_LANES) {
+        return w->tracks[row.index].source*w->activity_program*w->activity_tracker_gain;
+    } else if(row.kind==1) {
+        float peak=0;
+        for(int i=0;i<w->activity_count;++i)if(w->activity[i].tile==row.tile)
+            peak=fmaxf(peak,w->activity[i].source);
+        for(int i=0;i<TS_TAPEHEAD_ROUTE_ACTIVITY_COUNT;++i)if(w->tiles[i].tile==row.tile)
+            peak=fmaxf(peak,w->tiles[i].source*w->activity_program);
+        return peak;
+    } else if(row.kind==2 || row.kind==4)return w->peaks[row.index];
+    return 0;
+}
 /* This mask is UI-only reachability. Feedback is bounded by the finite set
    of destinations; it never drives DSP activation or transport. */
 static int fx_movement_destinations(TsSamplePages *pages,TsInstrument *bank,unsigned char *keep)
@@ -483,6 +506,7 @@ static void fx_rect(int x,int y,int width,int height,uint32_t color)
     if(r>x && b>y)mx_rect(x,y,r-x,b-y,color);
 }
 #include "main_sdl_fx_canvas_draw.inc"
+#include "ts_canvas_tiny_text.inc"
 static uint32_t fx_tint(uint32_t a,uint32_t b)
 {return 0xff000000u | (((a&0x00fefefeu)>>1)+((b&0x00fefefeu)>>1));}
 
@@ -519,8 +543,22 @@ static void fx_node_rect(float left,float top,float right,float bottom,const cha
     int pad=SDL_max(2,(int)lroundf((height<44*factor?4:7)*factor));
     int show_detail=width>=180*factor && height>=76*factor && detail && detail[0];
     SDL_Rect title={x+pad,y+pad,width-2*pad,height-pad-(int)((show_detail?30:4)*factor)};
-    if(!fx_name_fits(name,title,1,factor))name=compact;
-    fx_text_box_scaled(title,graph,name,color==FX_MUTED?FX_DIM:FX_TEXT,1,2,factor);
+    uint32_t title_ink=color==FX_MUTED?FX_DIM:FX_TEXT;
+    if(width<118*factor || height<34*factor) {
+        int available_width=r-l-4,available_height=bt-t-3;
+        int pixel=SDL_clamp((int)lroundf(fx_stroke.scale),1,SDL_max(1,available_height/5));
+        int length=(int)strlen(name);
+        if(available_height>=10 && available_width>=length*8 && pixel<2)pixel=2;
+        int capacity=available_width/(4*pixel);
+        if(available_height>=5*pixel && capacity>0) {
+            CanvasTextSurface surface={matrix_window.pixels,mx_pixel_w(),clip.x,clip.y,clip.x+clip.w,clip.y+clip.h};
+            if(length>capacity && compact[0] && strlen(compact)<(size_t)length)name=compact;
+            canvas_tiny_text(&surface,l+2,t+2,pixel,capacity,name,title_ink);
+        }
+    } else {
+        if(!fx_name_fits(name,title,1,factor))name=compact;
+        fx_text_box_scaled(title,graph,name,title_ink,1,2,factor);
+    }
     if(show_detail)fx_text_box_scaled((SDL_Rect){x+pad,y+height-(int)(27*factor),width-2*pad,(int)(18*factor)},graph,detail,FX_DIM,1,1,factor);
 }
 
@@ -675,7 +713,7 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
             TsSourceRoute raw=mx_route(n->row,pages,bank),r=mx_display_route(raw);
             if(n->row.kind==3 && !raw.matrix_enabled) {
                 int selected=fx_wire_selected(n->row,TS_FX_MOSAIC_BUS)>=0;uint32_t custom=fx_wire_color(n->row,TS_FX_MOSAIC_BUS);
-                if(bus && layer==(focus && selected)){float x,y,xx,yy;fx_navigation_endpoints(n,TS_FX_MOSAIC_BUS,&x,&y,&xx,&yy);fx_cables_add(x,y,xx,yy,fx_focus_color(selected?MX_YELLOW:custom?custom:FX_DIM,n,bus));}
+                if(bus && layer==(focus && selected)){float x,y,xx,yy;fx_navigation_endpoints(n,TS_FX_MOSAIC_BUS,&x,&y,&xx,&yy);fx_cables_add_signal(x,y,xx,yy,fx_focus_color(selected?MX_YELLOW:custom?custom:FX_DIM,n,bus),0,n->level);}
                 continue;
             }
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
@@ -690,7 +728,10 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                 if(focus && !related)color=fx_tint(color,FX_BG);
                 float x=fx_xf(n->x+fx_node_w(n)),y=fx_yf(n->y+fx_node_h(n)*.5f),xx=fx_xf(to->x),yy=fx_yf(to->y+fx_node_h(to)*(sc?.8f:.5f));
                 fx_navigation_endpoints(n,d,&x,&y,&xx,&yy);
-                fx_cables_add(x,y,xx,yy,fx_focus_color(color,n,to));
+                float level=w->layout->canvas_flow && w->controls.enabled && mx_destination_available(d)?
+                    n->level*fabsf(r.matrix_gain[d]*.001f):0;
+                if(level>.0001f)fx_cables_add_signal(x,y,xx,yy,fx_focus_color(color,n,to),0,level);
+                else fx_cables_add(x,y,xx,yy,fx_focus_color(color,n,to));
             }
         }
     }
@@ -729,8 +770,10 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     for(float xx=gx;fx_xf(xx)<fx_right();xx+=grid)
         for(float yy=gy;fx_yf(yy)<FX_BOTTOM;yy+=grid)fx_rect(fx_x(xx),fx_y(yy),1,1,grid_ink);
     TsMatrixEffectControls *meta=fx_meta();
+    fx_flow_visible=0;
     if(meta)fx_meta_paint(meta);
     else {
+        for(int i=0;i<fx_canvas.count;++i)fx_canvas.node[i].level=fx_row_level(fx_canvas.node[i].row);
         fx_groups_paint();
         fx_paint_cables(pages,bank);
         for(int i=0;i<fx_canvas.count;++i) {
@@ -759,23 +802,23 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
                 snprintf(compact,sizeof(compact),"%s",layer);
                 detail=source->muted?"MUTED / M: TOGGLE":source->solo?"SOLO / ALT+S: TOGGLE":"M: MUTE / ALT+S: SOLO";}
             uint32_t color=c && !c->enabled?FX_MUTED:fx_source_color(n->row);
-            if(fx_canvas.active_view && fx_row_playing(n->row)) {
-                float pulse=.28f+.10f*sinf(SDL_GetTicks()*.0025f);
-                uint32_t green=0xff68d68b,mixed=0xff000000;
-                for(int shift=0;shift<24;shift+=8)mixed|=(uint32_t)(((color>>shift)&255)*(1-pulse)+((green>>shift)&255)*pulse)<<shift;
-                color=mixed;detail="PLAYING";
+            float peak=n->level;
+            int sounding=peak>.0001f && n->row.kind<=3 && n->row.kind!=2;
+            if(sounding) {
+                color=fx_tint(color,MX_GREEN);
+                detail="PLAYING";
             }
             color=fx_focus_color(color,n,n);
             fx_node_rect(l,t,r,b,title,compact,detail,color,fx_chosen(n->row),n->scale);
             float middle=fx_yf(n->y+fx_node_h(n)*.5f);
             int modulation=c && c->type==TS_MATRIX_FX_MODULATOR;
             if(n->destination>=0 && !modulation)fx_draw_port(l,middle,color,FX_PORT_AUDIO);
-            if(n->at>=0 && (!c || c->type!=TS_MATRIX_FX_RECALL))fx_draw_port(r,middle,color,modulation?FX_PORT_MODULATION:FX_PORT_AUDIO);
+            if(n->at>=0 && (!c || c->type!=TS_MATRIX_FX_RECALL))
+                fx_draw_port(r,middle,sounding?MX_GREEN:color,modulation?FX_PORT_MODULATION:FX_PORT_AUDIO);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
             if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))
                 fx_draw_port(l,fx_yf(n->y+fx_node_h(n)*.8f),color,FX_PORT_SIDECHAIN);
-            float peak=(n->row.kind==2 || n->row.kind==4)?w->peaks[n->row.index]:0;
-            if(peak>0 && r-l>22 && l>20 && r<fx_right() && b<FX_BOTTOM && t>=FX_TOP)
+            if(peak>.0001f && r-l>22 && l>20 && r<fx_right() && b<FX_BOTTOM && t>=FX_TOP)
                 mx_signal((int)lroundf(l)+8,(int)lroundf(b)-3,(int)lroundf(r-l)-16,2,peak,MX_GREEN);
         }
         fx_labels_paint();fx_groups_titles();
@@ -814,6 +857,10 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
     if(!meta) {
         const char *tools[]={"MOVEMENTS","PROJECT","VIEW SIZES"};
         for(int i=0;i<3;++i){TsUiRect r=fx_toolbar_rect(FX_TOOL_NAVIGATOR+i);fx_button(r.x,r.y,r.w,tools[i],0);}
+        TsUiRect flow=fx_toolbar_rect(FX_TOOL_FLOW);
+        fx_button(flow.x,flow.y,flow.w,"FLOW",w->layout->canvas_flow);
+        mx_rect(flow.x+10,flow.y+7,14,14,w->layout->canvas_flow?FX_FOCUS:FX_DIM);
+        mx_rect(flow.x+12,flow.y+9,10,10,w->layout->canvas_flow?FX_FOCUS:FX_PANEL);
     }
     if(w->status[0])fx_panel_text(24,MATRIX_H-34,MATRIX_W-240,28,w->status,FX_FOCUS,1,1);
     else {snprintf(label,sizeof(label),"%d NODES / %.0F%% / Z: FRAME SELECTED",fx_canvas.count,w->layout->canvas_zoom*100);mx_text(24,MATRIX_H-28,label,FX_DIM,1);}
@@ -836,7 +883,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         int count=w->gallery?w->gallery->count:0;
         mx_rect(20,88,500,32*(count+2)+4,FX_EDGE);
         fx_button(22,90,496,"ALL MOVEMENTS",!fx_canvas.movement && !fx_canvas.active_view);
-        fx_button(22,122,496,"CURRENTLY PLAYING / GREEN PULSE",fx_canvas.active_view);
+        fx_button(22,122,496,"CURRENTLY PLAYING",fx_canvas.active_view);
         for(int c=0;c<count;++c) {
             snprintf(label,sizeof(label),"C%02d / %.35s",c+1,w->gallery->canvas[c].name);
             fx_button(22,154+c*32,496,label,fx_canvas.movement==w->gallery->canvas[c].id);

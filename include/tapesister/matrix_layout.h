@@ -33,7 +33,7 @@ typedef struct {
     int row_count;
     unsigned char column[TS_MATRIX_DESTINATIONS];
     /* View metadata; stable effect IDs survive removal and slot reuse. */
-    int canvas_count,canvas_view,canvas_straight,canvas_snap,canvas_split;
+    int canvas_count,canvas_view,canvas_straight,canvas_snap,canvas_split,canvas_flow;
     float canvas_x,canvas_y,canvas_zoom;
     TsFxCanvasPosition canvas[TS_FX_CANVAS_POSITIONS];
     int label_count;

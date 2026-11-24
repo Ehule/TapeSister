@@ -40,6 +40,8 @@ static FxPoint fx_midpoint(FxPoint a,FxPoint b)
 {return (FxPoint){(a.x+b.x)*.5f,(a.y+b.y)*.5f};}
 static FxPoint fx_device_point(FxPoint p)
 {return (FxPoint){p.x*mx_pixel_w()/MATRIX_W,p.y*mx_pixel_h()/MATRIX_H};}
+static float fx_cable_bend(float x,float xx)
+{return fmaxf(40,fabsf(xx-x)*.45f);}
 static void fx_curve_split(FxCablePath *path,FxPoint a,FxPoint b,FxPoint c,FxPoint d,int depth)
 {
     FxPoint pa=fx_device_point(a),pb=fx_device_point(b),pc=fx_device_point(c),pd=fx_device_point(d);
@@ -59,7 +61,7 @@ static void fx_cable_path_uncached(FxCablePath *path,float x,float y,float xx,fl
 {
     path->count=1;path->point[0]=(FxPoint){x,y};
     if(matrix_window.layout->canvas_straight){path->point[path->count++]=(FxPoint){xx,yy};return;}
-    float bend=fmaxf(40,fabsf(xx-x)*.45f);
+    float bend=fx_cable_bend(x,xx);
     fx_curve_split(path,(FxPoint){x,y},(FxPoint){x+bend,y},(FxPoint){xx-bend,yy},(FxPoint){xx,yy},0);
 }
 /* Bounded UI-only geometry cache shared by paint, click and marquee. Exact
@@ -142,6 +144,14 @@ static void fx_stroke_segment(FxPoint a,FxPoint b)
         }
     }
 }
+static uint32_t fx_blend_ink(uint32_t old,uint32_t color,unsigned alpha)
+{
+    unsigned inverse=255-alpha;
+    unsigned r=(((old>>16)&255)*inverse+((color>>16)&255)*alpha+127)/255;
+    unsigned g=(((old>>8)&255)*inverse+((color>>8)&255)*alpha+127)/255;
+    unsigned b=((old&255)*inverse+(color&255)*alpha+127)/255;
+    return 0xff000000u|(r<<16)|(g<<8)|b;
+}
 static void fx_stroke_end(uint32_t color)
 {
     /* Union coverage before compositing: segment joins and arrowheads must
@@ -150,11 +160,7 @@ static void fx_stroke_end(uint32_t color)
         size_t row=(size_t)y*fx_stroke.width;
         for(int x=fx_stroke.left[y];x<fx_stroke.right[y];++x) {
             unsigned alpha=fx_stroke.coverage[row+x];if(!alpha)continue;
-            uint32_t old=matrix_window.pixels[row+x];unsigned inverse=255-alpha;
-            unsigned r=(((old>>16)&255)*inverse+((color>>16)&255)*alpha+127)/255;
-            unsigned g=(((old>>8)&255)*inverse+((color>>8)&255)*alpha+127)/255;
-            unsigned b=((old&255)*inverse+(color&255)*alpha+127)/255;
-            matrix_window.pixels[row+x]=0xff000000u|(r<<16)|(g<<8)|b;
+            matrix_window.pixels[row+x]=fx_blend_ink(matrix_window.pixels[row+x],color,alpha);
             fx_stroke.coverage[row+x]=0;
         }
         fx_stroke.left[y]=fx_stroke.width;fx_stroke.right[y]=0;
@@ -209,7 +215,8 @@ static float fx_cable(float x,float y,float xx,float yy,uint32_t color,int draw,
 /* Quiet cables need no continuous rasterization. Compare the exact ordered
    draw commands (not a lossy hash), and cache only the graph background/cables.
    Nodes, meters, drag previews and selection outlines remain live. */
-typedef struct {float x,y,xx,yy;uint32_t color,control;} FxCableCommand;
+typedef struct {float x,y,xx,yy;uint32_t color,control;float level;} FxCableCommand;
+static int fx_flow_visible;
 static struct {
     FxCableCommand *commands;
     size_t count,used,capacity;
@@ -223,10 +230,57 @@ static void fx_cables_free(void)
 {
     free(fx_cable_cache.commands);free(fx_cable_cache.pixels);
     memset(&fx_cable_cache,0,sizeof(fx_cable_cache));
+    fx_flow_visible=0;
 }
 static SDL_Rect fx_cables_area(void)
 {
     return (SDL_Rect){mx_px(20),mx_py(FX_TOP),mx_px(fx_right())-mx_px(20),mx_py(FX_BOTTOM)-mx_py(FX_TOP)};
+}
+static FxPoint fx_flow_position(FxCableCommand c,float t,int straight)
+{
+    float bend=0;
+    if(!straight) {
+        float u=1-t;
+        bend=3*u*t*(u-t)*fx_cable_bend(c.x,c.xx);
+        t=t*t*(3-2*t);
+    }
+    return (FxPoint){c.x+(c.xx-c.x)*t+bend,c.y+(c.yy-c.y)*t};
+}
+static int fx_flow_intersects(FxCableCommand c,int straight)
+{
+    if(c.control || c.level<=.0001f || fmaxf(c.y,c.yy)<FX_TOP || fminf(c.y,c.yy)>=FX_BOTTOM)return 0;
+    float bend=straight?0:fx_cable_bend(c.x,c.xx);
+    return fmaxf(c.xx,c.x+bend)>=20 && fminf(c.x,c.xx-bend)<fx_right();
+}
+static void fx_flow_dots(SDL_Rect clip,Uint64 now)
+{
+    /* Keep animated work bounded on large patches. Sample across the command
+       list so a dense first bank cannot consume every visible dot. */
+    enum { FX_FLOW_DOT_LIMIT=128 };
+    const int straight=matrix_window.layout->canvas_straight,stride=mx_pixel_w();
+    const uint32_t ink=FX_TEXT;
+    size_t active=0;
+    for(size_t i=0;i<fx_cable_cache.count;++i)active+=fx_flow_intersects(fx_cable_cache.commands[i],straight);
+    fx_flow_visible=active!=0;
+    size_t step=(active+FX_FLOW_DOT_LIMIT-1)/FX_FLOW_DOT_LIMIT,index=0;
+    if(!step)return;
+    for(size_t i=0;i<fx_cable_cache.count;++i) {
+        FxCableCommand c=fx_cable_cache.commands[i];
+        if(!fx_flow_intersects(c,straight) || index++%step)continue;
+        unsigned duration=(unsigned)SDL_clamp(hypotf(c.xx-c.x,c.yy-c.y)*2.4f,440.f,2100.f);
+        float t=(float)((now+i*137)%duration)/duration;
+        FxPoint p=fx_device_point(fx_flow_position(c,t,straight));
+        float support=(1.7f+fminf(c.level*8,1.f)*.55f)*fmaxf(1,fx_stroke.scale)+.5f;
+        int l=SDL_max(clip.x,(int)floorf(p.x-support)),r=SDL_min(clip.x+clip.w,(int)ceilf(p.x+support));
+        int top=SDL_max(clip.y,(int)floorf(p.y-support)),bottom=SDL_min(clip.y+clip.h,(int)ceilf(p.y+support));
+        for(int y=top;y<bottom;++y)for(int x=l;x<r;++x) {
+            float alpha=SDL_clamp(support-hypotf(x+.5f-p.x,y+.5f-p.y),0.f,1.f);
+            if(alpha>0) {
+                uint32_t *pixel=&matrix_window.pixels[(size_t)y*stride+x];
+                *pixel=fx_blend_ink(*pixel,ink,(unsigned)(alpha*255.f));
+            }
+        }
+    }
 }
 static void fx_cables_begin(void)
 {
@@ -259,9 +313,10 @@ static void fx_cables_draw_command(FxCableCommand c)
     }
     fx_stroke_end(c.color);
 }
-static void fx_cables_add_kind(float x,float y,float xx,float yy,uint32_t color,unsigned control)
+static void fx_cables_add_signal(float x,float y,float xx,float yy,uint32_t color,unsigned control,float level)
 {
-    FxCableCommand command={x,y,xx,yy,color,control};
+    FxCableCommand command={x,y,xx,yy,color,control,level};
+    const size_t key_size=offsetof(FxCableCommand,level);
     if(fx_cable_cache.direct){fx_cables_draw_command(command);return;}
     if(fx_cable_cache.used==fx_cable_cache.capacity) {
         size_t capacity=fx_cable_cache.capacity?fx_cable_cache.capacity*2:64;
@@ -274,12 +329,18 @@ static void fx_cables_add_kind(float x,float y,float xx,float yy,uint32_t color,
         }
         fx_cable_cache.commands=commands;fx_cable_cache.capacity=capacity;
     }
-    if(fx_canvas.bundles)for(size_t j=0;j<fx_cable_cache.used;++j)
-        if(!memcmp(&command,&fx_cable_cache.commands[j],sizeof(command)))return;
+    if(fx_canvas.bundles)for(size_t j=0;j<fx_cable_cache.used;++j) {
+        FxCableCommand *existing=&fx_cable_cache.commands[j];
+        if(!memcmp(&command,existing,key_size)) {
+            existing->level=fmaxf(existing->level,level);return;
+        }
+    }
     size_t i=fx_cable_cache.used++;
-    if(i>=fx_cable_cache.count || memcmp(&command,&fx_cable_cache.commands[i],sizeof(command)))fx_cable_cache.changed=1;
+    if(i>=fx_cable_cache.count || memcmp(&command,&fx_cable_cache.commands[i],key_size))fx_cable_cache.changed=1;
     fx_cable_cache.commands[i]=command;
 }
+static void fx_cables_add_kind(float x,float y,float xx,float yy,uint32_t color,unsigned control)
+{fx_cables_add_signal(x,y,xx,yy,color,control,0);}
 static void fx_cables_add(float x,float y,float xx,float yy,uint32_t color)
 {fx_cables_add_kind(x,y,xx,yy,color,0);}
 static void fx_cables_end(void)
@@ -308,4 +369,5 @@ static void fx_cables_end(void)
         if(changed)memcpy(cache,screen,(size_t)area.w*sizeof(*cache));
         else memcpy(screen,cache,(size_t)area.w*sizeof(*cache));
     }
+    if(matrix_window.layout->canvas_flow)fx_flow_dots(area,SDL_GetTicks64());
 }

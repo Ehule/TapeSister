@@ -572,21 +572,19 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
         card.l+=f.l*gain*v->mix_left;card.r+=f.r*gain*v->mix_right;
         v->travel[n]+=v->step[n]*speed;
     }
-    if(routes) {
-        /* A settled identity route changes no bus or recording tap. Preserve
-           its meters and signed-zero arithmetic; all transitions/custom routes
-           (and nonfinite input) continue through the general routing code. */
-        if(v->route_passthrough && isfinite(card.l) && isfinite(card.r)) {
-            float left=fabsf(card.l),right=fabsf(card.r),peak=left>right?left:right;
+    /* The legacy bus and the settled identity route both know the actual
+       card peak here. Preserve each path's existing sample arithmetic. */
+    if(!routes || (v->route_passthrough && isfinite(card.l) && isfinite(card.r))) {
+        float left=fabsf(card.l),right=fabsf(card.r),peak=left>right?left:right;
+        if(isfinite(peak)) {
             if(peak>v->output_route.activity_source)v->output_route.activity_source=peak;
             if(peak>v->output_route.activity_send)v->output_route.activity_send=peak;
-            return (TsStereoFrame){card.l+card.r*0,card.l*0+card.r};
         }
-        if(!v->output_route.ready)
-            ts_source_route_set(&v->output_route,e->output_route,(unsigned)rate);
-        card=ts_source_route_frame(&v->output_route,card,routes);
+        return routes?(TsStereoFrame){card.l+card.r*0,card.l*0+card.r}:card;
     }
-    return card;
+    if(!v->output_route.ready)
+        ts_source_route_set(&v->output_route,e->output_route,(unsigned)rate);
+    return ts_source_route_frame(&v->output_route,card,routes);
 }
 
 #include "ts_mosaic_sequence.inc"

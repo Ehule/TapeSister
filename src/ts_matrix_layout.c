@@ -69,7 +69,7 @@ int ts_matrix_layout_valid(const TsMatrixLayout *l)
         if(d>=TS_MATRIX_DESTINATIONS || seen[d])return 0;
         seen[d]=1;
     }
-    if(l->canvas_count<0 || l->canvas_count>TS_FX_CANVAS_POSITIONS || l->canvas_view<0 || l->canvas_view>1 || l->canvas_straight<0 || l->canvas_straight>1 || l->canvas_snap<0 || l->canvas_snap>1 ||
+    if(l->canvas_count<0 || l->canvas_count>TS_FX_CANVAS_POSITIONS || l->canvas_view<0 || l->canvas_view>1 || l->canvas_straight<0 || l->canvas_straight>1 || l->canvas_snap<0 || l->canvas_snap>1 || l->canvas_flow<0 || l->canvas_flow>1 ||
        l->canvas_split<TS_FX_CANVAS_SPLIT_MIN || l->canvas_split>TS_FX_CANVAS_SPLIT_MAX ||
        !isfinite(l->canvas_x) || !isfinite(l->canvas_y) ||
        fabsf(l->canvas_x)>1000000 || fabsf(l->canvas_y)>1000000 ||
@@ -118,6 +118,7 @@ int ts_matrix_layout_write(FILE *f,const TsMatrixLayout *l)
     if(l->canvas_view && fprintf(f,"FxCanvas.View=%.9g,%.9g,%.9g\n",l->canvas_x,l->canvas_y,l->canvas_zoom)<0)return 0;
     if(fprintf(f,"FxCanvas.Straight=%d\n",l->canvas_straight)<0)return 0;
     if(fprintf(f,"FxCanvas.Snap=%d\n",l->canvas_snap)<0)return 0;
+    if(l->canvas_flow && fprintf(f,"FxCanvas.Flow=1\n")<0)return 0;
     if(fprintf(f,"FxCanvas.Split=%d\n",l->canvas_split)<0)return 0;
     for(int i=0;i<l->label_count;++i) {
         const TsFxCanvasLabel *p=&l->labels[i];
@@ -222,6 +223,10 @@ int ts_matrix_layout_read(TsMatrixLayout *l,const char *key,const char *value)
     if(!strcmp(key,"FxCanvas.Snap")) {
         if(!strcmp(value,"0"))l->canvas_snap=0;else if(!strcmp(value,"1"))l->canvas_snap=1;else return -1;
         return 1;
+    }
+    if(!strcmp(key,"FxCanvas.Flow")) {
+        if(strcmp(value,"0") && strcmp(value,"1"))return -1;
+        l->canvas_flow=value[0]=='1';return 1;
     }
     if(!strcmp(key,"FxCanvas.Split")) {
         if(!layout_number(&value,TS_FX_CANVAS_SPLIT_MAX,&i) || *value || i<TS_FX_CANVAS_SPLIT_MIN)return -1;

@@ -14,6 +14,15 @@ static void canvas_cache(void)
         fx_build(&pages,&bank);
     }
     assert(mx_present_count==frames && fx_graph_cache.builds==builds && mx_order_cache.sorts==sorts);
+    assert(!w->layout->canvas_flow);
+    toolbar_click(FX_TOOL_FLOW);assert(w->layout->canvas_flow);
+    view_codec();
+    for(int i=0;i<3;++i)cache_poll();
+    frames=mx_present_count;builds=fx_graph_cache.builds;
+    cache_poll();
+    assert(!fx_flow_visible && mx_present_count==frames && fx_graph_cache.builds==builds);
+    toolbar_click(FX_TOOL_FLOW);assert(!w->layout->canvas_flow);cache_poll();
+    frames=mx_present_count;builds=fx_graph_cache.builds;
     pointer(SDL_MOUSEMOTION,500,350,0,0);cache_poll();
     assert(mx_present_count==frames && fx_graph_cache.builds==builds);
     /* A meter change paints, but doesn't rebuild the graph. */

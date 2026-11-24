@@ -131,6 +131,7 @@ static void mosaic_envelope(const TsMosaicSource *s,size_t first,size_t last,flo
 #include "ts_mosaic_arrange_ui.inc"
 #include "ts_mosaic_grid_ui.inc"
 #include "ts_mosaic_array_ui.inc"
+#include "ts_canvas_tiny_text.inc"
 
 static void mosaic_card_edges(const MosaicFadeSurface *s,int64_t x,int64_t y,int64_t right,int64_t bottom,
     uint32_t accent,uint32_t edge,int selected)
@@ -161,17 +162,21 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     MosaicCardStyle style=mosaic_card_style(ui,e,width,bottom-top,selected);
     int hovered=e->id==ui->mosaic_hover_event;
+    int tiny=!ghost && !style.chars && width>=12 && bottom-top>=7;
     if(style.compact)fill=mosaic_mix_color(fill,color,dim?.10f:selected?.32f:.24f);
     MosaicFadeSurface fades={fb->pixels,TS_UI_WIDTH,151,66,ts_ui_mosaic_canvas_right(ui),TS_MOSAIC_CANVAS_BOTTOM,1,1,scale};
     if(!ghost)mosaic_canvas_rect(fb,ui,x,y,w,h,fill);
-    if(width<8 || bottom-top<8) {
+    if((width<8 || bottom-top<8) && !tiny) {
         mosaic_canvas_rect(fb,ui,x,y,w,h,selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):hovered?mosaic_hover_color(color):color);return;
     }
     if(e->source->video_path[0]) {
         color=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):hovered?mosaic_hover_color(RGB(133,190,239)):RGB(133,190,239);
         if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
         mosaic_card_edges(&fades,x,(int64_t)top,x+w,(int64_t)bottom,color,mosaic_mix_color(color,fill,.4f),selected);
-        if(x>=151 && top>=66 && style.chars>0){char label[64];int chars=style.chars;
+        if(tiny) {
+            CanvasTextSurface surface={fb->pixels,TS_UI_WIDTH,151,66,ts_ui_mosaic_canvas_right(ui),TS_MOSAIC_CANVAS_BOTTOM};
+            canvas_tiny_text(&surface,x+2,(int64_t)top+1,1,(w-4)/4,mosaic_layer_name(ui,e),color);
+        } else if(x>=151 && top>=66 && style.chars>0){char label[64];int chars=style.chars;
             snprintf(label,sizeof(label),"%.*s",chars,style.compact?"VISUAL":ts_mosaic_video_overridden(ui->mosaic,e)?"VISUAL / OVERRIDDEN":e->source->video_pool?"VISUAL / RANDOM POOL":"VISUAL / FILE");
             text(fb,x+(int)style.margin,y+(style.compact?2:5),label,color,1);
             if(!style.compact && h>23){snprintf(label,sizeof(label),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");text(fb,x+5,y+15,label,color,1);}}
@@ -179,7 +184,7 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         return;
     }
     double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
-    int first_row=(int)fmax(66,top+style.header),last_row=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,bottom-style.footer);
+    int first_row=(int)fmax(66,top+(tiny?7:style.header)),last_row=(int)fmin(TS_MOSAIC_CANVAS_BOTTOM,bottom-style.footer);
     for(int yy=first_row;yy<last_row;++yy) {
         if(ghost && (yy&1))continue;
         double elapsed=fmax(0,ui->mosaic_scroll+(yy-66)/scale-e->start);
@@ -215,7 +220,11 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     mosaic_fade_shape(&fades,e,x,(int64_t)top,x+w,(int64_t)bottom,style.focused?border:mosaic_mix_color(color,fill,.30f));
     mosaic_card_edges(&fades,x,(int64_t)top,x+w,(int64_t)bottom,border,style.focused?border:mosaic_mix_color(border,fill,.4f),selected);
     char label[100];
-    if(top>=66 && style.chars>0 && x>=151) {
+    if(tiny) {
+        CanvasTextSurface surface={fb->pixels,TS_UI_WIDTH,151,66,ts_ui_mosaic_canvas_right(ui),TS_MOSAIC_CANVAS_BOTTOM};
+        canvas_tiny_text(&surface,x+2,(int64_t)top+1,1,(w-4)/4,mosaic_layer_name(ui,e),
+            dim?color:ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)));
+    } else if(top>=66 && style.chars>0 && x>=151) {
         int chars=(int)fmin(style.chars,(ts_ui_mosaic_canvas_right(ui)-x-style.margin)/6);
         mosaic_card_name(label,sizeof(label),mosaic_layer_name(ui,e),chars);
         text(fb,x+(int)style.margin,y+(style.compact?2:4),label,

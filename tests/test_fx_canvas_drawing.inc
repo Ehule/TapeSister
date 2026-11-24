@@ -130,5 +130,18 @@ static void cable_drawing(const char *dir)
     }
     w->pixels=saved;w->pixel_w=saved_w;w->pixel_h=saved_h;w->layout->canvas_straight=straight;
     fx_cables_free();assert(fx_stroke_prepare());
+    /* Level changes paint over the cached wire, then silence restores it. */
+    uint32_t *base=malloc((size_t)saved_w*saved_h*sizeof(*base));assert(base);
+    mx_rect(0,0,MATRIX_W,MATRIX_H,FX_BG);
+    fx_cables_begin();fx_cables_add(110,200,520,400,FX_CABLE);fx_cables_end();
+    memcpy(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base));
+    fx_cables_begin();fx_cables_add_signal(110,200,520,400,FX_CABLE,0,.5f);fx_cables_end();
+    assert(!fx_cable_cache.changed);
+    fx_flow_dots(fx_cables_area(),200);
+    assert(fx_flow_visible && memcmp(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base)));
+    fx_cables_begin();fx_cables_add(110,200,520,400,FX_CABLE);fx_cables_end();
+    fx_flow_dots(fx_cables_area(),400);
+    assert(!fx_flow_visible && !fx_cable_cache.changed && !memcmp(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base)));
+    free(base);
     puts("Native cable pixels, fractional DPI, bounded curves, clipping, joins and selection passed.");
 }
