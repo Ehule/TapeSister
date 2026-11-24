@@ -60,8 +60,8 @@ static void mx_effect_paint(void)
         int used=0;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)used+=w->controls.effect[i].id!=0;
         snprintf(text,sizeof(text),"ADD AN INDEPENDENT EFFECT (%d / %d)",used,TS_MATRIX_EFFECT_CAPACITY);mx_text(32,703,text,MX_GREEN,2);
         mx_button(1080,696,160,"CLOSE",0);
-        for(int type=1;type<TS_MATRIX_FX_TYPES;++type)mx_button(32+(type-1)%7*172,736+(type-1)/7*34,162,ts_matrix_effect_name(type),0);
-        mx_text(32,813,"NEW EFFECTS START UNPATCHED. CONNECT THEIR INPUT COLUMN AND OUTPUT ROW.",MX_DIM,1);return;
+        for(int type=1;type<TS_MATRIX_FX_TYPES;++type)mx_button(32+(type-1)%7*172,736+(type-1)/7*34,162,type==TS_MATRIX_FX_RECALL?"HR SEND":ts_matrix_effect_name(type),0);
+        mx_text(400,813,"NEW EFFECTS START UNPATCHED.",MX_DIM,1);return;
     }
     int slot=mx_effect_slot();if(slot<0){mx_text(32,703,"INSTANCE REMOVED - SELECT ANOTHER ROW",MX_DIM,2);return;}
     const TsMatrixEffectControls *c=&w->controls.effect[slot];
@@ -92,6 +92,11 @@ static void mx_effect_paint(void)
     mx_button(898,696,138,"REMOVE",0);if(w->canvas){mx_button(1048,696,110,"REPLACE",0);mx_button(1166,696,74,"BACK",0);}
     else mx_button(1048,696,192,"BACK TO ROUTES",0);
     if(w->effect_progress<1 && c->type!=TS_SISTER_FX_TRANSIENT){mx_rect(630,715,240,3,MX_DIM);mx_rect(630,715,(int)(240*w->effect_progress),3,MX_AMBER);}
+    if(c->type==TS_MATRIX_FX_RECALL) {
+        mx_text(32,749,"MATCH THIS CARD NUMBER ON A TAPESISTER IN NODE IN HOSTILE RECALL.",MX_TEXT,1);
+        mx_text(32,779,"TRACKER NOTES DRIVE HIT. INPUT AMPLITUDE DRIVES LEVEL.",MX_DIM,1);
+        return;
+    }
     int count=mx_effect_controls(c),width=1204/count;
     for(int i=0;i<count;++i) {
         int x=32+i*width;mx_effect_label(text,sizeof(text),c,i);mx_text(x,735,text,MX_TEXT,1);
@@ -169,11 +174,11 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
     if(left && y>=696 && y<724 && x>=(w->canvas && !w->effect_menu?1166:1048)){w->effect_menu=0;w->effect_open=0;w->drag=0;return;}
     if(!mx_editable())return;
     if(w->effect_menu) {
-        if(left && y>=736 && y<798 && (y-736)%34<28 && x>=32 && x<1244){int type=1+(x-32)/172+7*((y-736)/34);if(type<TS_MATRIX_FX_TYPES)mx_effect_add(device,audio,ui,pages,bank,type);}
+        if(left && y>=736 && y<832 && (y-736)%34<28 && x>=32 && x<32+7*172 && (x-32)%172<162){int type=1+(x-32)/172+7*((y-736)/34);if(type<TS_MATRIX_FX_TYPES)mx_effect_add(device,audio,ui,pages,bank,type);}
         return;
     }
     int slot=mx_effect_slot();if(slot<0)return;
-    TsMatrixEffectControls *c=&w->controls.effect[slot];int change=0,count=mx_effect_controls(c),width=1204/count;
+    TsMatrixEffectControls *c=&w->controls.effect[slot];int change=0;
     if(c->type==TS_SISTER_FX_TRANSIENT && (w->drag==40 || (y>=696 && y<724 && x>=410 && x<884))) {
         TsSisterFxSlotControls control={.type=TS_SISTER_FX_TRANSIENT,.parameter_a=c->a,.parameter_b=c->b,.parameter_c=c->c,
             .transient_power=c->transient_power,.transient_states=c->transient_states};
@@ -221,6 +226,9 @@ static void mx_effect_event(const SDL_Event *e,SDL_AudioDeviceID device,AudioSta
         if(w->canvas && x>=1048 && x<1158){fx_replace_request(c->id);return;}
         if(x>=898 && x<1036){if(w->canvas)fx_delete_request(slot);else mx_effect_remove(device,audio,ui,pages,bank,slot);return;}
     }
+    int count=mx_effect_controls(c);
+    if(!count){if(change)mx_commit_controls(device,audio,ui);return;}
+    int width=1204/count;
     int control=x>=32 && x<1236?(x-32)/width:-1;
     if(control>=0 && control<count && x<32+control*width+width-18 && y>=730 && y<777) {
         if(wheel){mx_effect_value_set(c,control,mx_effect_value(c,control)+wheel*((SDL_GetModState()&KMOD_SHIFT)?.002f:.02f));change=1;}

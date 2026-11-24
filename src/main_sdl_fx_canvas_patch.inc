@@ -81,6 +81,18 @@ static int fx_replace_effect(int type,const TsSunVoxControls *patch,SDL_AudioDev
     int slot=-1;for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)if(s->controls.effect[i].id==fx_canvas.replace_id)slot=i;
     if(slot<0){free(s);return 0;}
     TsMatrixEffectControls old=s->controls.effect[slot];
+    int port=TS_MATRIX_EFFECT_BASE+slot;
+    if(type==TS_MATRIX_FX_RECALL)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(s->controls.row[port].matrix_gain[d]) {
+        snprintf(w->status,sizeof(w->status),"DISCONNECT OUTPUT CABLES BEFORE REPLACING THIS EFFECT WITH A HOSTILE RECALL SEND.");
+        free(s);return 0;
+    }
+    if(old.type==TS_MATRIX_FX_RECALL && type!=old.type)for(int i=0;i<s->count;++i) {
+        const TsSourceRoute *r=&s->routes[i].route;
+        if(!r->matrix_enabled && r->matrix_gain[port]) {
+            snprintf(w->status,sizeof(w->status),"DISCONNECT INHERITED TRACK TAPS BEFORE REPLACING THIS SEND WITH AN AUDIO EFFECT.");
+            free(s);return 0;
+        }
+    }
     ts_matrix_effect_default(&s->controls.effect[slot],type,old.id);
     TsMatrixEffectControls *c=&s->controls.effect[slot];
     c->enabled=old.enabled;c->mix=old.mix;c->gain_db=old.gain_db;c->transition=old.transition;

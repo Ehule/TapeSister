@@ -123,6 +123,9 @@ int ts_matrix_valid(const TsMatrixControls *c)
             if(c->row[s].matrix_gain[TS_MATRIX_EFFECT_BASE+i])return 0;
             if(s==TS_MATRIX_EFFECT_BASE+i)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(c->row[s].matrix_gain[d])return 0;
         }
+        int slot=ts_matrix_effect_index(s);
+        if(slot>=0 && c->effect[slot].type==TS_MATRIX_FX_RECALL)
+            for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(c->row[s].matrix_gain[d])return 0;
         if(ts_matrix_is_processor(s)) {
             if(c->delayed[s]>>TS_MATRIX_INSTANCE_DESTINATIONS || (!c->feedback && c->delayed[s]))return 0;
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if((c->delayed[s]&ts_matrix_feedback_bit(d)) &&
