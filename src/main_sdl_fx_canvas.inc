@@ -701,6 +701,15 @@ static int fx_select_wire(MatrixRow source,int destination,int toggle);
 #include "main_sdl_fx_canvas_groups.inc"
 #include "main_sdl_fx_canvas_properties.inc"
 #include "main_sdl_fx_canvas_popup.inc"
+static uint32_t fx_wire_phase(MatrixRow row,int destination)
+{
+    uint64_t key=row.tile^row.canvas*UINT64_C(0x9e3779b97f4a7c15);
+    uint32_t hash=(uint32_t)(key^(key>>32));
+    hash^=(uint32_t)(row.kind*256+row.index)*UINT32_C(0x85ebca6b);
+    hash^=(uint32_t)(destination+1)*UINT32_C(0xc2b2ae35);
+    hash=(hash^(hash>>16))*UINT32_C(0x7feb352d);
+    return hash^(hash>>15);
+}
 static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
 {
     fx_groups_cache_background();
@@ -725,7 +734,10 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                 if(bus && layer==(focus && selected)) {
                     uint32_t color=selected?MX_YELLOW:custom?custom:FX_DIM;
                     float x,y,xx,yy;fx_navigation_endpoints(n,TS_FX_MOSAIC_BUS,&x,&y,&xx,&yy);
-                    fx_cables_add_signal(x,y,xx,yy,fx_focus_color(color,n,bus),0,n->level,color);
+                    uint32_t ink=fx_focus_color(color,n,bus);
+                    if(w->layout->canvas_flow)
+                        fx_cables_add_signal(x,y,xx,yy,ink,0,n->level,color,fx_wire_phase(n->row,TS_FX_MOSAIC_BUS));
+                    else fx_cables_add(x,y,xx,yy,ink);
                 }
                 continue;
             }
@@ -744,8 +756,9 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                 fx_navigation_endpoints(n,d,&x,&y,&xx,&yy);
                 float level=w->layout->canvas_flow && w->controls.enabled && mx_destination_available(d)?
                     n->level*fabsf(r.matrix_gain[d]*.001f):0;
-                if(level>.0001f)fx_cables_add_signal(x,y,xx,yy,fx_focus_color(color,n,to),0,level,flow_color);
-                else fx_cables_add(x,y,xx,yy,fx_focus_color(color,n,to));
+                uint32_t ink=fx_focus_color(color,n,to);
+                if(w->layout->canvas_flow)fx_cables_add_signal(x,y,xx,yy,ink,0,level,flow_color,fx_wire_phase(n->row,d));
+                else fx_cables_add(x,y,xx,yy,ink);
             }
         }
     }

@@ -356,7 +356,8 @@ text-label editors show a blinking insertion cursor.
 **Flow Color** in **Name / Color**, or **Flow color...** in the canvas menu,
 sets one dot color across the project. **Reset** then **Apply** restores the
 cable colors. **F** toggles the moving dots. Long active cables show more dots
-so the direction stays visible when zoomed into the middle of a route.
+so the direction stays visible when zoomed into the middle of a route. The dots
+move slowly on screen at every zoom and additional dots fade in as you zoom in.
 
 Delete protects fixed buses and hardware endpoints. Their selection still supports
 positioning, resizing and framing. Cable selection does not select either endpoint.
