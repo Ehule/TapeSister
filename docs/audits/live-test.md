@@ -1,80 +1,60 @@
-# Tree of Life live diagnostics
+# Loaded-project Gallery diagnostic
 
-This temporary opt-in diagnostic drives the actual application UI/controller
-and audio-device loop. It is separate from the unpaced callback benchmark.
-It does not freeze, render, replace, or simplify the project's effects.
+Set this in the active `tapesister.ini`, under `[Audio]`, then restart TapeSister:
 
-## Angelic Noise: option 1
+```ini
+[Audio]
+diagnostic_live_test=1
+```
 
-Use the complete **Tree-of-Life-Angelic-Noise-Complete** package, including its
-Gallery project, samples and project-data folders. Close TapeSister, set
-`diagnostic_live_test=1` under `[Audio]` in the active `tapesister.ini`, and restart.
-Open **Gallery/Tree-of-Life-Angelic-Noise/Tree-of-Life-Angelic-Noise.tsr**.
-Wait for **ANGELIC NOISE TEST ARMED**, then press Mosaic Play or Space once.
+Open any TapeSister project (`.tsr`). The diagnostic scans its Gallery and shows
+**GALLERY TEST ARMED**, the movement count, and estimated duration. Press Mosaic
+Play or Space to start. Loading arms the test; it does not start playback.
+Names, filenames, effect IDs, movement lengths and card counts are unrestricted.
+A project with one canvas is a one-movement test. This is a project diagnostic,
+not analysis of an arbitrary WAV opened in the sample browser.
 
-The test runs for **13 minutes 12 seconds** and visits all ten movements in a
-fixed, nonsequential order. It exercises crossfades, midpoint and late seeks,
-marker jumps, Follow, mute/solo, effect edits, FX Canvas/Matrix, TrackSister and
-Audio Health. Space pauses playback with effect tails; Escape stops the engine;
-a double Escape returns the playhead home. Assertions check frozen playheads,
-restart behavior and completion of each Gallery transition. This is a navigation
-and transport stress test; it does not play all 100 minutes uninterrupted.
+The plan visits every Gallery canvas in order. A nonempty movement takes about
+67 seconds, plus 11 seconds if it has usable markers. Empty canvases take
+12 seconds each. There are about eight seconds of initial idle measurement.
+For ten nonempty movements with markers, the estimate is **13:08**.
 
-Each movement includes quiet measurement intervals with FX Canvas open and
-closed, plus paused-tail and stopped-engine intervals. The exported JSONL records
-transport state, effect suspension, callback timing and interval profiles for
-both audio and UI. `tools/compare_live_test_logs.py` reports callback use grouped
-by state and FX Canvas visibility, excluding boundary windows and two seconds
-of settling. It reports observed use without imposing a hardware-specific CPU
-threshold. Profiler timing overhead is included (`profile=1`).
+Each populated movement samples the beginning, midpoint and late timeline,
+opens/closes FX Canvas, and jumps to an existing marker when available. It
+measures playback, Space-paused tails, and Backspace-stopped engine load, and
+verifies the double-Backspace return to zero. Empty movements are identified in
+the log and get a stopped-engine check without playback assertions. The report
+inventories sample, pattern, live and video cards, missing source references,
+markers, duration, saved speed, and the project's Matrix effect count.
 
-Health recording/export and save protection are automatic. Leave the application
-alone during the test; a physical Escape aborts it, including while the scripted
-playhead is paused. Logs are saved in the project's `logs` folder. Reload the
-project to repeat. Set the option to `0` and restart before normal editing.
-The previous profiling setting is restored after completion or abort.
+The existing sound parameters, card mute/solo states and routing are retained.
+For repeatable screening, playback temporarily loops each complete movement at
+its saved speed; marker loops and grid snapping are disabled, and Gallery entry
+is Resume with no crossfade. The Gallery sequencer is stopped. These temporary
+transport/view changes cannot be saved: reload the project after the test. This
+screening does not assess live crossfades, sequence order, every point on the
+timeline, or the full uninterrupted buildup of stateful effects.
 
-Option 1 still recognizes the original Tree of Life 04 project below and runs its
-unchanged 3:36 comparison sequence. Options 2 and 3 retain their original Keter
-full-playback schedules.
+Audio Health recording and interval profiling start automatically. Logs export
+to the loaded project's `logs` folder after completion or abort. Escape aborts;
+other manual input aborts before allowing edits. Lost telemetry or a changed
+audio device makes the test incomplete. The previous profiler setting is
+restored. Set `diagnostic_live_test=0` and restart for ordinary editing.
 
-## Original Tree of Life 04 replay
+`tools/compare_live_test_logs.py path/to/session.saved.jsonl` summarizes the
+export, including separate named movement results and callback timing grouped
+by playback state and FX Canvas visibility. Only complete measurement windows
+after two seconds of settling are attributed to a phase. No hardware-specific
+CPU threshold is imposed. Profiling overhead is included; timings alone do not
+establish that the physical audio output was click-free.
 
-1. Keep the complete original **Tree-of-Life-Live-FX-04** project folder,
-   including its `samples`, `project-data` and `sister-state.ini`. The loose
-   TSR alone is not sufficient.
-2. Close TapeSister. In the active `tapesister.ini`, set:
-   ```ini
-   [Audio]
-   diagnostic_live_test=1
-   ```
-   The default is `0`. Restart after changing it. Keep the same backend, device,
-   sample rate, buffer and output channel configuration for comparison runs.
-3. Open `Tree-of-Life-Live-FX-04.tsr`. The title says **LIVE TEST ARMED**.
-   Opening the project never starts playback. The test requires its original
-   first three movements (53/48/43 cards), 14 enabled effect instances, Binah
-   selected, and the Taneb Spring / Grain instances used by this fixture.
-   An incompatible project is rejected with a status message.
-4. Health recording starts automatically on launch when this switch is enabled,
-   even with `session_log=0`. You do not need to open F12 or press Record.
-   This is the diagnostic JSONL recording, not an audio WAV recording.
-   Press **Mosaic Play** (or Space in Mosaic). Leave the application alone for
-   **3 minutes 36 seconds**. **Escape aborts from any application window.**
-   Ctrl+Shift+F12 can still mark an audible click without invalidating the test.
-   Other keyboard/mouse edits, MIDI input, minimizing/closing a window, or
-   changing the audio device invalidate the controlled run.
-5. On completion or abort, the session log is automatically exported to the
-   project's `logs` folder. The status changes from **EXPORT QUEUED** to
-   **LOG SAVED IN PROJECT logs** after the background save finishes. The Audio Health recorder continues to retain its
-   recovery file. If export fails, use F12 / Save Session.
-6. Reload the original project to repeat. Set `diagnostic_live_test=0` and
-   restart to return to normal use.
+The active INI is the `TAPESISTER_CONFIG` override when set, otherwise the first
+`tapesister.ini` found in the working directory, beside the executable, or in
+its parent directory. The shipped example now places the flag under `[Audio]`.
 
-The diagnostic's changes stay in memory. Project saves and configuration saves
-are blocked for the rest of a process that has armed the test, so temporary
-routing/parameter/view changes cannot overwrite the baseline or become startup
-settings. Restart before doing ordinary editing/saving. This deliberately small
-diagnostic is not a general-purpose project scripting system.
+Options 2 and 3 retain the original full Keter tests below. Earlier versions of
+option 1 used fixed Tree04/Angelic Noise schedules; current option 1 always uses
+`gallery-live-v1`, including for those same projects.
 
 ## Uninterrupted Keter test
 
@@ -92,35 +72,8 @@ Automatic health recording/export, profile-off measurement, Escape abort and
 save protection work as in mode 1.
 
 The log identifies this as `tree04-keter-full-v1`. Compare it with another
-run of that same mode and project. Mode `1` retains the original 240-action,
-3:36 `tree04-live-v1` schedule unchanged, for comparison with the existing
-transition log. Restart after switching modes; use `0` for normal editing.
-
-## Versioned scenario: tree04-live-v1
-
-All three populated movements are prepared at 300 seconds, with repeat off,
-Gallery entry set to Resume, and an eight-second Gallery crossfade. A fixed
-card identity in each scene is selected before playback for mute/solo; the
-selection does not depend on which action happens to be late.
-
-| Time from Play | Work |
-| --- | --- |
-| 0–20 s | Binah warmup, profiler off |
-| 20–80 s | Binah control/window exercise |
-| 80–140 s | Gallery transition to Keter and the same exercise |
-| 140–200 s | Gallery transition to Chokhmah and the same exercise |
-| 200–216 s | Return to Binah, allow the crossfade/tails, stop |
-
-Each exercise opens FX Canvas, sweeps the Taneb Spring mix and native Grain
-size at 10 updates/second, restores those parameters, mutes/unmutes and
-solos/unsolos a card, bypasses/re-enables Taneb Spring, visits the embedded
-tracker, switches between Matrix and FX Canvas, opens/closes Audio Health,
-and returns to a steady playback period. The core controllers used for manual
-operation handle the edits and Gallery transitions.
-
-The profiler is disabled during the run to avoid conflating its overhead with
-the scenario. Its prior state is restored at the end. The session recorder and
-callback telemetry are required and enabled independently of profiling.
+run of that same mode and project. Current option `1` uses the discovered
+Gallery schedule and is not a matched control for old fixed-scenario logs. Restart after switching modes; use `0` for normal editing.
 
 ## Evidence and comparisons
 
@@ -186,7 +139,7 @@ Profiler epoch publication can straddle one callback at an interval boundary.
 The previous profiler on/off state is restored when the run ends or aborts.
 
 Profiling adds timer/publication overhead. Use mode 3 to locate costs, then mode 2
-with profiling off to compare deadline performance. The original Tree of Life 04 schedules remain unchanged. All modes automatically record/export the health log and
+with profiling off to compare deadline performance. The full Keter schedules remain unchanged. All modes automatically record/export the health log and
 protect the loaded project from saving the temporary diagnostic state.
 
 The offline callback probe also accepts `TS_BENCH_INTERVAL=30`, emitting per-

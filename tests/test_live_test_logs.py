@@ -36,6 +36,31 @@ class Comparison(unittest.TestCase):
         self.assertAlmostEqual(result["stopped"]["average_callback_ms"], 1 / 6)
         self.assertEqual(result["playing"]["peak_callback_ms"], 4)
 
+    def test_movements_stay_separate_and_names_are_preserved(self):
+        run = [{"type": "live_test_movement", "detail":
+                f"movement={i} id={10+i} cards=1 markers=0 length_s=2 playback=sampled_loop name=Movement {i} key=value"}
+               for i in range(2)]
+        run += [{"type": "live_test_phase", "t_ms": 0, "detail": "mode=playing fx_canvas=1 movement=0 settle_ms=2000"},
+                {"type": "live_test_phase", "t_ms": 6000, "detail": "mode=playing fx_canvas=1 movement=1 settle_ms=2000"},
+                {"type": "live_test_complete", "t_ms": 12000}]
+        windows = [{"from_ms": a, "t_ms": b, "callbacks": 10, "average_ms": load, "peak_ms": load, "over_budget": 0}
+                   for a, b, load in [(2000, 5000, 1), (5000, 8000, 999), (8000, 11000, 5)]]
+        result = module.movement_usage(run, windows)
+        self.assertEqual([m["name"] for m in result], ["Movement 0 key=value", "Movement 1 key=value"])
+        self.assertEqual([m["phase_usage"][0]["average_callback_ms"] for m in result], [1, 5])
+
+    def test_gallery_requires_inventory_for_every_movement(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "gallery.jsonl"
+            rows = fixture()
+            rows[1]["detail"] = rows[1]["detail"].replace("tree04-live-v1", "gallery-live-v1") + " movements=2"
+            for count in (0, 1, 2):
+                data = rows[:2] + [{"type": "live_test_movement", "t_ms": 101, "detail":
+                    f"movement={i} id={i+1} cards=0 markers=0 length_s=0 playback=skipped_empty name=Empty {i}"}
+                    for i in range(count)] + rows[2:]
+                path.write_text("\n".join(map(json.dumps, data)), encoding="utf-8")
+                self.assertEqual(module.report([path])["runs"][0]["complete"], count == 2)
+
     def test_matched_and_changed(self):
         with tempfile.TemporaryDirectory() as folder:
             a, b = Path(folder) / "a.jsonl", Path(folder) / "b.jsonl"

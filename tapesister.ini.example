@@ -45,6 +45,14 @@ chain_stamp_crossfade_ms=3
 ripple_cut_crop_canvas=0
 
 [Audio]
+; Opt-in diagnostic for whichever project you load: 0 = off, 1 = scan its Gallery.
+; Restart, open a project, then press Mosaic Play when GALLERY TEST ARMED appears.
+; Visits every movement; samples playback, paused tails and stopped-engine load.
+; About 67 seconds per nonempty movement (+11 with markers), 12 seconds if empty.
+; Logs/profiles export to the project's logs folder. Esc aborts. Reload afterward.
+; 2/3 retain the legacy full Keter test (3 adds profiles), original Tree04 only.
+diagnostic_live_test=0
+
 ; Auto is recommended. Windows also supports WASAPI and DirectSound.
 audio_backend=Auto
 ; Blank uses the machine's default stereo playback device.
@@ -241,15 +249,7 @@ eq_morph_max_seconds=240
 ; Automatic Audio Health session logging in the writable per-user Health folder.
 ; 0 disables recording next launch; detailed PROFILE remains separately optional.
 session_log=1
-; Tree-of-Life-Live-FX-04 diagnostic: 1 = original 3:36 controller/transition test;
-; 2 = uninterrupted Keter from start through its ending plus 8 seconds of tails.
-; 3 = same full Keter playback, with automatic 30-second per-effect profiles.
-; Profiling adds measurement overhead; use mode 2 for deadline comparisons.
-; All modes arm on load and start on Mosaic Play; health logs record/export automatically.
-; Restart with 0 for normal editing. Mode 2 preserves the full effect-history buildup.
-# 1: complete Angelic Noise Gallery stress/transport/idle test (13:12).
-# Open Tree-of-Life-Angelic-Noise.tsr and press Mosaic Play.
-diagnostic_live_test=0
+
 
 [Mosaic]
 ; Shift+V hides the volume editor and expands the canvas. Its envelope stays active.
