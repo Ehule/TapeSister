@@ -98,9 +98,8 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     MosaicCardStyle style=mosaic_card_style(ui,e,w/sx,h/sy,selected);
     int hovered=e->id==ui->mosaic_hover_event;
-    int pixel=(int)fmax(1,round(fmin(sx,sy)*.68));
-    int tiny=!ghost && style.compact && (!style.chars || h<20*sy || w<55*sx) &&
-        w>=12*pixel && h>=7*pixel;
+    int pixel=(int)fmax(1,fmin(round(fmin(sx,sy)*.85),fmin(w/12,h/7)));
+    int tiny=!ghost && style.compact && w>=12*pixel && h>=7*pixel;
     CanvasTextSurface surface={d->pixels,d->width,0,0,d->width,d->height};
     if(style.compact)fill=mosaic_mix_color(fill,color,dim?.10f:selected?.32f:.24f);
     MosaicFadeSurface fades={d->pixels,d->width,0,0,d->width,d->height,sx,sy,rate};

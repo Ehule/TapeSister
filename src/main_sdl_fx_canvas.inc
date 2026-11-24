@@ -545,15 +545,22 @@ static void fx_node_rect(float left,float top,float right,float bottom,const cha
     SDL_Rect title={x+pad,y+pad,width-2*pad,height-pad-(int)((show_detail?30:4)*factor)};
     uint32_t title_ink=color==FX_MUTED?FX_DIM:FX_TEXT;
     if(width<118*factor || height<34*factor) {
-        int available_width=r-l-4,available_height=bt-t-3;
-        int pixel=SDL_clamp((int)lroundf(fx_stroke.scale),1,SDL_max(1,available_height/5));
-        int length=(int)strlen(name);
-        if(available_height>=10 && available_width>=length*8 && pixel<2)pixel=2;
-        int capacity=available_width/(4*pixel);
-        if(available_height>=5*pixel && capacity>0) {
+        int available_width=r-l-4,available_height=bt-t-5;
+        int readable=SDL_min(available_height/5,available_width/20);
+        int pixel=SDL_clamp((int)lroundf(1.5f*fx_stroke.scale),1,SDL_max(1,readable));
+        int capacity=SDL_min(63,available_width/(4*pixel));
+        int lines=SDL_min(2,(available_height+pixel)/(6*pixel));
+        if(lines>0 && capacity>0) {
             CanvasTextSurface surface={matrix_window.pixels,mx_pixel_w(),clip.x,clip.y,clip.x+clip.w,clip.y+clip.h};
-            if(length>capacity && compact[0] && strlen(compact)<(size_t)length)name=compact;
-            canvas_tiny_text(&surface,l+2,t+2,pixel,capacity,name,title_ink);
+            if(strlen(name)>(size_t)(capacity*lines) && compact[0] && strlen(compact)<strlen(name))name=compact;
+            int y=t+2;
+            if(lines==2 && strlen(name)>(size_t)capacity) {
+                char first[128];
+                name=fx_label_line(name,capacity,first);
+                canvas_tiny_text(&surface,l+2,y,pixel,capacity,first,title_ink);
+                y+=6*pixel;
+            }
+            canvas_tiny_text(&surface,l+2,y,pixel,capacity,name,title_ink);
         }
     } else {
         if(!fx_name_fits(name,title,1,factor))name=compact;
