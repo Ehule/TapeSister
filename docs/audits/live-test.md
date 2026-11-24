@@ -1,5 +1,83 @@
 # Loaded-project Gallery diagnostic
 
+## Adaptive full playback and stress test
+
+Use the new mode for a comprehensive diagnostic of the loaded Gallery:
+
+```ini
+[Audio]
+diagnostic_live_test=4
+```
+
+Restart TapeSister, open a `.tsr` project, and press Mosaic Play after the test
+is armed. The generated plan and its estimated duration appear before playback.
+This mode is `gallery-stress-v1`; mode 1 below retains the shorter screening
+schedule for comparisons with existing logs.
+
+Mode 4 discovers the actual Gallery contents. It exercises full playback at
+the saved movement speeds, real incoming/outgoing crossfades, dense passages
+with FX Canvas closed and open, overlapping scenes, and transport recovery.
+Full playback preserves the buildup of stateful effects. Its duration therefore
+depends on the music: a long album is a long test, and slow playback extends it.
+The full-play stages disable detailed profiling; the stress stages enable it
+to identify processing costs separately from the less-instrumented playback.
+
+The test generates its own arrangement to cover the loaded movements rather
+than replaying the saved Gallery sequence order. It retains sound parameters,
+source routes, card mute/solo choices and the loaded assets. Diagnostic transport
+changes and generated sequences cannot be saved. Reload the project afterward;
+set `diagnostic_live_test=0` and restart to return to ordinary editing.
+
+Crossfade coverage is measured in the audio renderer. The log records the two
+scene identities, the requested/effective fade, frames rendered with both scenes
+active, progress, and normal or intentional interrupted retirement. This covers
+fades shorter than a UI update or a one-second logging window. Missing sources,
+lost trace records, incomplete playback and failed state checks are reported;
+an action returning success is not sufficient evidence that a fade was tested.
+Escape aborts and exports the partial result.
+
+`live_test_stage` begin/end records provide counter differences for each job,
+including callback deadline overruns, near-budget callbacks and arrival gaps.
+`live_test_transition` records prove overlap progress; their counts do not
+pretend to assign every callback deadline to an individual sub-buffer fade.
+`live_test_coverage` records whether the full-play and transition requirements
+were met. The comparison tool exposes these as `stages` and `stress_coverage`
+and reports `deadline_status` separately from successful scenario completion.
+
+```sh
+python tools/compare_live_test_logs.py path/to/session.saved.jsonl
+```
+
+The report includes the actual buffer deadline, peak callback time as a fraction
+of that budget, timing events by movement/state, system CPU and memory, and any
+explicit schedule adjustments required to wait for audio-clock progress. It
+orders asynchronous records by their timestamps and excludes callbacks that
+cross the measurement boundaries. One-second window averages are never reported
+as individual-callback percentiles. Profiling, OS scheduling and external input
+can affect a run; silence or lack of an external signal is not evidence of
+successful audible playback. A completed test with deadline misses has reached
+an unstable operating point at those settings, even if most callbacks fit.
+
+No CPU model, project filename, movement title or particular effect identity
+is privileged by this mode. Its purpose is to expose the loaded workload's
+limits and recovery behavior on the current hardware, while retaining the
+musical processing that creates that workload.
+
+Dense regions are selected by overlapping audible note slots, a structural
+heuristic rather than a claim to have measured the CPU-heaviest instant. The
+closed/open samples use the same source positions, but effects history carries
+between stages: hard stop freezes processing rather than recreating each effect.
+These samples describe both viewing conditions; they are not a strict isolated
+test of drawing cost. Dense overlap also exercises a sustained power fade and a
+separate one-millisecond smooth fade. Where the sections are long enough, the
+test pauses/resumes an active fade, rejects a competing switch, interrupts a
+fade with hard stop, then verifies playback recovery. Short sections explicitly
+report unavailable mid-fade interactions. An all-empty Gallery reports
+`no_playback_workload`, and nonempty sections below the native sequencer's
+one-millisecond minimum are reported as unsupported rather than silently passed.
+
+## Quick Gallery screening
+
 Set this in the active `tapesister.ini`, under `[Audio]`, then restart TapeSister:
 
 ```ini
@@ -86,13 +164,18 @@ The JSONL log records:
   device changes, workload snapshots and system measurements;
 - completion or explicit abort, including lost telemetry or failed actions.
 
-Deadlines are absolute relative to Play. Late actions are not silently
+In screening and legacy modes, deadlines are absolute relative to Play. Late actions are not silently
 rescheduled. At most one action is dispatched per UI iteration; backlogged
 actions retain their original planned times. The script is repeatable; OS
 scheduling and modulation/random state are not promised to be sample-identical.
 Reloading restores project/DSP state, but waiting before Play and host scheduling
 can still change evolving effects. Intentional mute/bypass edits are not
 automatically classified as glitches.
+
+Mode 4 waits for actual audio-clock progress before ending a playback stage.
+It logs every resulting schedule shift and retains original planned times and
+dispatch lateness, so an overloaded host cannot earn full-play coverage by
+simply reaching a wall-clock timeout. A stalled audio clock aborts the test.
 
 ```sh
 python tools/compare_live_test_logs.py before.saved.jsonl after.saved.jsonl

@@ -153,6 +153,75 @@ static void serial_equivalence(void) {
         ts_sister_single_fx_free(child[i]);
     ts_meta_free(rack);
 }
+static void span_equivalence(void) {
+    /* Retain the scalar renderer as an independent chronological reference.
+       Uneven spans cross the 150Hz macro refresh and internal 64-frame bounds;
+       toggles, morphing, tails and transport resets must remain bit-identical. */
+    const unsigned rates[] = {44100, 48000, 96000};
+    const unsigned lengths[] = {1, 17, 63, 64, 65, 127, 257};
+    for (unsigned r = 0; r < sizeof(rates)/sizeof(*rates); ++r)
+        for (int preset = 0; preset <= TS_META_PRESETS; ++preset) {
+            TsMetaControls c;
+            if (preset < TS_META_PRESETS) ts_meta_preset(&c, preset);
+            else {
+                ts_meta_default(&c); c.count = 2;
+                ts_meta_stage_default(&c.stage[0], TS_SISTER_FX_AUTOPAN);
+                ts_meta_stage_default(&c.stage[1], TS_SISTER_FX_AUTOPAN);
+                c.stage[0].autopan.value[TS_AP_WAVE-3] = 1;
+                c.stage[1].autopan.value[TS_AP_SYNC-3] = 1;
+            }
+            TsMetaEngine *scalar = ts_meta_new(&c, rates[r], 271),
+                         *block = ts_meta_new(&c, rates[r], 271),
+                         *alias = ts_meta_new(&c, rates[r], 271);
+            assert(scalar && block && alias);
+            unsigned frame = 0;
+            for (unsigned step = 0; step < 80; ++step) {
+                if (step == 8) ts_meta_macro_set(&c, 0, .95f);
+                if (step == 16) c.stage[0].enabled = 0;
+                if (step == 25) c.stage[0].enabled = 1;
+                if (step == 32) {ts_meta_capture(&c, 0);ts_meta_macro_set(&c, 1, .1f);ts_meta_capture(&c, 1);c.scene_mode=1;c.morph=.6f;}
+                ts_meta_set(scalar, &c);ts_meta_set(block, &c);ts_meta_set(alias, &c);
+                double quarter = step < 40 ? .5 : .3;
+                uint32_t serial = step < 48 ? 7 : 8;
+                ts_meta_transport(scalar,quarter,serial);ts_meta_transport(block,quarter,serial);ts_meta_transport(alias,quarter,serial);
+                unsigned count = lengths[step % (sizeof(lengths)/sizeof(*lengths))];
+                TsStereoFrame input[257], expected[257], out[257], inplace[257];
+                for (unsigned j = 0; j < count; ++j, ++frame) {
+                    input[j] = step < 55 ? (TsStereoFrame){.07f*sinf(frame*.025f),.05f*cosf(frame*.017f)} : (TsStereoFrame){0};
+                    expected[j] = ts_meta_process(scalar,input[j]);
+                }
+                memcpy(inplace,input,count*sizeof(*input));
+                ts_meta_process_span(block,input,out,count);
+                ts_meta_process_span(alias,inplace,inplace,count);
+                assert(!memcmp(expected,out,count*sizeof(*out)));
+                assert(!memcmp(expected,inplace,count*sizeof(*out)));
+            }
+            ts_meta_free(scalar);ts_meta_free(block);ts_meta_free(alias);
+        }
+}
+static void matrix_span_equivalence(void) {
+    static TsMatrixControls c;
+    static TsMatrixEffects scalar, block, alias;
+    ts_matrix_default(&c);
+    assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_META)==0);
+    c.effect[0].mix=.37f;c.effect[0].gain_db=-3;
+    TsMatrixEffects *engines[]={&scalar,&block,&alias};
+    for(unsigned i=0;i<3;++i){ts_matrix_effects_init(engines[i]);assert(ts_matrix_effects_restore(engines[i],&c,48000));}
+    for(unsigned step=0;step<160;++step) {
+        if(step==40 || step==80 || step==120) {
+            c.effect[0].enabled=step!=40;c.effect[0].mix=.8f;
+            ts_meta_macro_set(&c.effect[0].meta,0,.12f);
+            for(unsigned i=0;i<3;++i){TsMatrixEffectPlan plan;assert(ts_matrix_effects_stage(engines[i],&c,48000,&plan));ts_matrix_effects_commit(engines[i],&c,48000,&plan);ts_matrix_effects_discard(&plan);}
+        }
+        TsStereoFrame input[64],keys[64]={{0}},expected[64],out[64],inplace[64];
+        for(unsigned j=0;j<64;++j){unsigned n=step*64+j;input[j]=(TsStereoFrame){.07f*sinf(n*.017f),.04f*cosf(n*.023f)};expected[j]=ts_matrix_effects_process(&scalar,0,input[j],keys[j],1);}
+        memcpy(inplace,input,sizeof(input));
+        ts_matrix_effects_process_span(&block,0,input,keys,out,64,1);
+        ts_matrix_effects_process_span(&alias,0,inplace,keys,inplace,64,1);
+        assert(!memcmp(expected,out,sizeof(out)) && !memcmp(expected,inplace,sizeof(out)));
+    }
+    for(unsigned i=0;i<3;++i)ts_matrix_effects_free(engines[i]);
+}
 static void persistence(void) {
     char error[256];
     TsMetaControls a, b;
@@ -270,6 +339,8 @@ int main(void) {
     primitives();
     racks();
     serial_equivalence();
+    span_equivalence();
+    matrix_span_equivalence();
     persistence();
     matrix_lifecycle();
     gain_staging();

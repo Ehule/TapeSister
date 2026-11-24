@@ -51,6 +51,10 @@ ripple_cut_crop_canvas=0
 ; About 67 seconds per nonempty movement (+11 with markers), 12 seconds if empty.
 ; Logs/profiles export to the project's logs folder. Esc aborts. Reload afterward.
 ; 2/3 retain the legacy full Keter test (3 adds profiles), original Tree04 only.
+; 4 = adaptive full-play/stress diagnostic for any Gallery, with real crossfades.
+; Plays each populated movement through, then exercises dense passages, FX Canvas,
+; overlapping scenes and recovery. Estimated duration appears before Play.
+; Full playback disables detailed profiling; the stress stages enable it.
 diagnostic_live_test=0
 
 ; Auto is recommended. Windows also supports WASAPI and DirectSound.

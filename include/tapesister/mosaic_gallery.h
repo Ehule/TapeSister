@@ -6,6 +6,16 @@ enum { TS_GALLERY_LIMIT=16, TS_GALLERY_NAME=48 };
 enum { TS_GALLERY_START, TS_GALLERY_RESUME, TS_GALLERY_MARKER };
 enum { TS_GALLERY_SEQUENCE_STEPS=64, TS_GALLERY_POINT_END=-2, TS_GALLERY_POINT_TIME=-1 };
 enum { TS_GALLERY_FADE_LINEAR, TS_GALLERY_FADE_SMOOTH, TS_GALLERY_FADE_POWER, TS_GALLERY_FADE_CURVES };
+/* Optional, bounded audio-clock evidence for the opt-in diagnostic. No timers,
+   atomics, allocation or logging are performed by the renderer. The control
+   thread enables/resets and drains these records under its existing audio
+   exclusion. A retired record distinguishes natural completion from Stop. */
+enum { TS_GALLERY_DIAGNOSTIC_TRANSITIONS=64 };
+typedef struct {
+    uint64_t serial,from_id,to_id,dual_frames,progress_frames;
+    int from,to,retired,completed;
+    double requested_fade,effective_fade,from_start,from_end,to_start,to_end;
+} TsGalleryDiagnosticTransition;
 typedef struct {
     uint64_t canvas_id; /* Stable identity, independent of Gallery order. */
     int in_marker,out_marker; /* TIME/END or a zero-based marker slot. */
@@ -54,6 +64,10 @@ typedef struct TsMosaicGallery {
     TsMosaic *spare; /* Preallocated playback-only outgoing copy for same-canvas fades. */
     int spare_active,sequence_fade,fade_curve;
     unsigned block_frames;
+    int diagnostic_enabled,diagnostic_active;
+    unsigned diagnostic_count,diagnostic_overflow;
+    uint64_t diagnostic_serial;
+    TsGalleryDiagnosticTransition diagnostic[TS_GALLERY_DIAGNOSTIC_TRANSITIONS];
 } TsMosaicGallery;
 void ts_gallery_sequence_default(TsGallerySequence *,uint64_t);
 int ts_gallery_sequence_valid(const TsGallerySequence *);

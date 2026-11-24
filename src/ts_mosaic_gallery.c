@@ -115,9 +115,29 @@ static void gallery_restart(TsMosaic *m,double position)
     memset(&m->route_handoff,0,sizeof(m->route_handoff));
     ts_mosaic_seek(m,position);m->schedule.valid=0;
 }
+static void gallery_diagnostic_begin(TsMosaicGallery *g,double requested)
+{
+    if(!g->diagnostic_enabled || g->outgoing<0 || g->fade_length<=0)return;
+    g->diagnostic_active=-1;
+    if(g->diagnostic_count>=TS_GALLERY_DIAGNOSTIC_TRANSITIONS){++g->diagnostic_overflow;return;}
+    int i=(int)g->diagnostic_count++;g->diagnostic_active=i;
+    TsMosaic *from=ts_gallery_outgoing(g),*to=ts_gallery_active(g);
+    g->diagnostic[i]=(TsGalleryDiagnosticTransition){
+        .serial=++g->diagnostic_serial,.from_id=g->canvas[g->outgoing].id,.to_id=g->canvas[g->active].id,
+        .from=g->outgoing,.to=g->active,.requested_fade=requested,.effective_fade=g->fade_length,
+        .from_start=from?from->time:0,.to_start=to?to->time:0};
+}
 static void gallery_park(TsMosaicGallery *g)
 {
     TsMosaic *old=ts_gallery_outgoing(g);if(!old)return;
+    if(g->diagnostic_enabled && g->diagnostic_active>=0 &&
+       (unsigned)g->diagnostic_active<g->diagnostic_count) {
+        TsGalleryDiagnosticTransition *d=&g->diagnostic[g->diagnostic_active];
+        d->from_end=old->time;d->to_end=ts_gallery_active(g)->time;d->retired=1;
+        d->completed=g->sequence_fade?old->time+1e-10>=g->player.fade_end:
+            g->fade_position+1e-12>=g->fade_length;
+        g->diagnostic_active=-1;
+    }
     old->playing=0;old->live_paused=1;old->live_pause_gain=0;old->section_transport=0;
     if(!g->spare_active)g->canvas[g->outgoing].parked=1;
     gallery_spare_release(g);g->outgoing=-1;g->sequence_fade=0;
@@ -147,6 +167,7 @@ int ts_gallery_switch(TsMosaicGallery *g,int i,char *e,size_t n)
     }
     to->parked=0;to->scene->playing=playing;
     g->outgoing=g->active;g->active=i;g->fade_position=0;g->fade_length=g->fade_seconds;
+    gallery_diagnostic_begin(g,g->fade_seconds);
     int audible=from->scene->playing || to->scene->playing || from->scene->audition_id ||
         (ts_mosaic_live_count(from->scene) && !from->paused) ||
         (ts_mosaic_live_count(to->scene) && !to->scene->live_paused);
@@ -171,6 +192,12 @@ TsStereoFrame ts_gallery_read(TsMosaicGallery *g,int rate,TsSourceRouteMix *rout
     TsMosaic *m=ts_gallery_active(g),*old=ts_gallery_outgoing(g);
     if(!old)return ts_mosaic_read_routed(m,rate,routes);
     if(rate<=0)return (TsStereoFrame){0};
+    if(g->diagnostic_enabled && g->diagnostic_active>=0 &&
+       (unsigned)g->diagnostic_active<g->diagnostic_count) {
+        TsGalleryDiagnosticTransition *d=&g->diagnostic[g->diagnostic_active];
+        ++d->dual_frames;
+        if(m->playing && old->playing)++d->progress_frames;
+    }
     /* Constant-sum fade: identical canvases retain their level. Every route,
        send and reference tap receives the same gain; only two engines render. */
     float t=(float)fmax(0,fmin(1,g->fade_position/g->fade_length));

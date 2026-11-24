@@ -15,14 +15,121 @@ def fixture():
         {"type": "live_test_start", "t_ms": 100, "detail": "scenario=tree04-live-v1 steps=1 project_hash=abc backend=dummy rate=48000 frames=512 channels=4 workers=0 profile=0"},
         {"type": "live_test_checkpoint", "t_ms": 101, "detail": "generation=1 callbacks=100 frames=51200 over_budget=40"},
         {"type": "live_test_action_begin", "t_ms": 102, "detail": "index=0 action=finish target=0 value=0.000000 planned_ms=0 actual_ms=2 late_ms=2"},
-        {"type": "audio_window", "t_ms": 200, "from_ms": 150, "peak_ms": 12, "over_budget": 2},
+        {"type": "audio_window", "t_ms": 185, "from_ms": 150, "peak_ms": 12, "over_budget": 2},
         {"type": "live_test_action_end", "t_ms": 201, "detail": "index=0 success=1 duration_ms=3"},
         {"type": "live_test_checkpoint", "t_ms": 202, "detail": "generation=1 callbacks=110 frames=56320 over_budget=42"},
         {"type": "live_test_complete", "t_ms": 203, "detail": "reason=finished"},
     ]
 
 
+def stress_fixture():
+    rows = []
+    for job, stage in enumerate(("full_pass", "dense_closed", "dense_open", "dense_overlap", "short_overlap", "recovery")):
+        for state, advance in (("begin", 0), ("end", 10)):
+            calls = 100 + job * 20 + advance
+            rows.append({"type": "live_test_stage", "t_ms": job * 100 + advance,
+                         "detail": f"stage={stage} state={state} job={job} movement={-1 if job == 0 else 0} profile={int(job != 0)} callbacks={calls} frames={calls * 512} over_budget=0 near_budget=0 start_gaps=0"})
+    for serial, (job, stage) in enumerate(((0, "full_pass"), (3, "dense_overlap"), (4, "short_overlap")), 1):
+        rows.append({"type": "live_test_transition", "t_ms": job * 100 + 9,
+                     "detail": f"transition={serial} job={job} stage={stage} from=0 to=0 from_id=42 to_id=42 requested_fade_s=.001 effective_fade_s=.001 dual_frames=48 progress_frames=48 completed=1 retired_reason=completed from_start_s=.009 from_end_s=.01 to_start_s=0 to_end_s=.001"})
+    rows.append({"type": "live_test_coverage", "t_ms": 600,
+                 "detail": "planned_transitions=3 observed_transitions=3 completed_transitions=3 interrupted_transitions=0 full_movements_expected=1 full_movements_completed=1 missing_sources=0 trace_overflow=0 coverage_complete=1 workload=content"})
+    rows.append({"type": "live_test_complete", "t_ms": 601})
+    return sorted(rows, key=lambda row: row["t_ms"])
+
+
 class Comparison(unittest.TestCase):
+    def test_short_crossfade_coverage_needs_audio_progress_not_windows(self):
+        rows = stress_fixture()
+        movements = [{"movement": 0, "id": "42", "length_seconds": .01}]
+        stages = module.stage_usage(rows, [])
+        self.assertEqual(len(stages), 6)
+        self.assertTrue(all(s["complete"] and s["counter_deltas"]["callbacks"] == 10 for s in stages))
+        self.assertTrue(all(s["average_callback_ms"] is None for s in stages))
+        coverage = module.stress_coverage(rows, stages, movements)
+        self.assertTrue(coverage["complete"], coverage["problems"])
+        for row in rows:
+            if row["type"] == "live_test_transition":
+                row["detail"] = row["detail"].replace("progress_frames=48", "progress_frames=0")
+                break
+        coverage = module.stress_coverage(rows, stages, movements)
+        self.assertFalse(coverage["complete"])
+        self.assertIn("transition_without_dual_scene_progress", coverage["problems"])
+
+    def test_stress_rejects_missing_duplicate_or_incomplete_evidence(self):
+        movements = [{"movement": 0, "id": "42", "length_seconds": .01}]
+        for mutation in ("missing_counter", "duplicate_begin", "orphan_end", "short_full_pass", "missing_source", "trace_overflow", "missing_inventory"):
+            with self.subTest(mutation=mutation):
+                rows = stress_fixture()
+                if mutation == "missing_counter":
+                    rows[0]["detail"] = rows[0]["detail"].replace("frames=51200", "")
+                elif mutation == "duplicate_begin":
+                    rows.append(dict(rows[0]))
+                elif mutation == "orphan_end":
+                    rows = rows[1:]
+                elif mutation == "short_full_pass":
+                    for row in rows:
+                        if row["type"] == "live_test_transition" and "stage=full_pass" in row["detail"]:
+                            row["detail"] = row["detail"].replace("from_end_s=.01", "from_end_s=.005")
+                elif mutation in ("missing_source", "trace_overflow"):
+                    key = "missing_sources" if mutation == "missing_source" else "trace_overflow"
+                    rows[-2]["detail"] = rows[-2]["detail"].replace(f"{key}=0", f"{key}=1")
+                inventory = [] if mutation == "missing_inventory" else movements
+                rows.sort(key=lambda row: row["t_ms"])
+                coverage = module.stress_coverage(rows, module.stage_usage(rows, []), inventory)
+                self.assertFalse(coverage["complete"], mutation)
+
+    def test_asynchronously_drained_audio_is_attributed_by_timestamp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "drained.jsonl"
+            rows = fixture()
+            window = rows.pop(4)
+            rows.append(window)  # Writer drains this after the completion marker.
+            rows.append({"type": "audio_timing", "t_ms": 185, "duration_ms": 14,
+                         "budget_ms": 10.666667, "over_budget": True,
+                         "extra_start_gap_ms": 3})
+            rows.append({"type": "audio_timing", "t_ms": 90, "duration_ms": 999,
+                         "budget_ms": 10.666667, "over_budget": True})
+            rows.append({"type": "audio_timing", "t_ms": 201, "duration_ms": 99,
+                         "budget_ms": 10.666667, "over_budget": True})
+            rows.append({"type": "audio_window", "t_ms": 201, "from_ms": 186,
+                         "peak_ms": 99, "over_budget": 1})
+            path.write_text("\n".join(map(json.dumps, rows)), encoding="utf-8")
+            run = module.report([path])["runs"][0]
+            self.assertTrue(run["complete"])
+            self.assertEqual(run["observed_peak_ms_in_complete_windows"], 12)
+            self.assertEqual(run["timing"]["observed_peak_ms"], 14)
+            self.assertEqual(run["timing"]["flagged_over_budget_events"], 1)
+            self.assertEqual(run["timing"]["boundary_timing_events_excluded"], 1)
+            self.assertEqual(run["deadline_status"], "deadline_misses_observed")
+            self.assertAlmostEqual(run["buffer_budget_ms"], 512 / 48)
+
+    def test_timing_keeps_paused_tails_and_start_gaps_separate(self):
+        run = [
+            {"type": "live_test_phase", "t_ms": 0, "detail": "mode=playing movement=1 fx_canvas=0"},
+            {"type": "audio_timing", "t_ms": 1, "duration_ms": 15, "over_budget": True},
+            {"type": "live_test_phase", "t_ms": 2, "detail": "mode=paused_tails movement=1 fx_canvas=1"},
+            {"type": "audio_timing", "t_ms": 3, "duration_ms": 12, "over_budget": True},
+            {"type": "audio_timing", "t_ms": 4, "duration_ms": .1, "over_budget": False, "extra_start_gap_ms": 20},
+        ]
+        timing = module.timing_usage(run, [])
+        self.assertEqual(timing["flagged_over_budget_events"], 2)
+        self.assertEqual(timing["largest_extra_start_gap_ms"], 20)
+        self.assertEqual([(r["mode"], r["over_budget_events"]) for r in timing["over_budget_by_movement_and_state"]],
+                         [("playing", 1), ("paused_tails", 1)])
+
+    def test_stage_windows_do_not_mix_profiled_and_unprofiled_passes(self):
+        run = [
+            {"type": "live_test_stage", "t_ms": 0, "detail": "stage=full_pass movement=0 profile=0"},
+            {"type": "live_test_stage", "t_ms": 10000, "detail": "stage=dense_closed movement=0 profile=1"},
+            {"type": "live_test_complete", "t_ms": 20000},
+        ]
+        windows = [{"from_ms": a, "t_ms": b, "callbacks": 10, "average_ms": avg, "peak_ms": avg}
+                   for a, b, avg in [(100, 9000, 1), (9000, 11000, 999), (11000, 19000, 2)]]
+        stages = module.stage_usage(run, windows)
+        self.assertEqual([s["average_callback_ms"] for s in stages], [1, 2])
+        self.assertEqual([s["profile"] for s in stages], ["0", "1"])
+
     def test_idle_windows_exclude_boundaries_and_settling(self):
         run = [{"type": "live_test_phase", "t_ms": 100, "detail": "mode=stopped fx_canvas=1 settle_ms=2000"},
                {"type": "live_test_phase", "t_ms": 6100, "detail": "mode=playing fx_canvas=0 settle_ms=2000"},

@@ -432,9 +432,14 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
                 dry[2*j]+(wet[2*j]*n->gain-dry[2*j])*amount,
                 dry[2*j+1]+(wet[2*j+1]*n->gain-dry[2*j+1])*amount});
         }
-    } else if(n && n->board && connected) {
+    } else if(n && (n->board || n->meta) && connected) {
         TsStereoFrame dry[TS_MATRIX_DELAY];
-        ts_pedalboard_process_observed(n->board,in,out,dry,frames,f->eq_spectrum_child,node_spectrum(f,n));
+        if(n->board)ts_pedalboard_process_observed(n->board,in,out,dry,frames,f->eq_spectrum_child,node_spectrum(f,n));
+        else {
+            /* Preserve the input even when the caller renders in place. */
+            memcpy(dry,in,frames*sizeof(*dry));
+            ts_meta_process_span(n->meta,in,out,frames);
+        }
         for(unsigned j=0;j<frames;++j) {
             if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
             n->gain+=(n->gain_target-n->gain)*n->smooth;n->mix+=(n->mix_target-n->mix)*n->smooth;

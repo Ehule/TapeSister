@@ -203,6 +203,7 @@ static void gallery_sequence_enter(TsMosaicGallery *g,int step,int visit,int can
 {
     TsMosaic *old=ts_gallery_active(g),*to=g->canvas[canvas].scene;
     double old_end=g->player.end,old_start=old->time;
+    double requested_fade=g->player.current.fade_seconds;
     int from=g->active;
     if(fade>0 && to==old)gallery_spare_capture(g,old);
     if(fade<=0) {old->playing=0;old->live_paused=1;old->section_transport=0;g->canvas[from].parked=1;}
@@ -213,6 +214,7 @@ static void gallery_sequence_enter(TsMosaicGallery *g,int step,int visit,int can
     g->sequence_fade=fade>0;g->fade_curve=g->player.current.curve;
     g->player=(TsGallerySequencePlayer){.running=1,.step=step,.visit=visit,.queued=-1,
         .start=start,.end=end,.fade_start=old_start,.fade_end=old_end,.current=g->sequence.step[step]};
+    gallery_diagnostic_begin(g,requested_fade);
     ts_mosaic_begin_block(to,g->block_frames?g->block_frames:1);
     gallery_sequence_refresh(g);
 }
