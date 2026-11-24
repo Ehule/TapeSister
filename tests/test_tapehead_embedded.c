@@ -533,6 +533,13 @@ static void hostile_recall_link(void)
     TsRecallReading b=ts_matrix_recall_take(&test_audio->sister.matrix_effects,1);
     assert(a.id!=b.id && a.hits==1 && b.hits==1 && a.level==0 && b.level>.01f);
     assert(ts_matrix_recall_take(&test_audio->sister.matrix_effects,0).hits==0);
+    TsMatrixEffects *fx=&test_audio->sister.matrix_effects;
+    ts_matrix_effects_suspend(fx,1u<<1);
+    const TsSourceRoute *lane=&test_pages->tracker.lanes[1].output_route;
+    ts_matrix_recall_note(fx,lane);
+    ts_matrix_recall_tracker_level(fx,lane,.25f);
+    b=ts_matrix_recall_take(fx,1);
+    assert(b.hits==1 && fabsf(b.level-.25f)<.0001f);
 
 }
 static void tile_level_parity(void) {

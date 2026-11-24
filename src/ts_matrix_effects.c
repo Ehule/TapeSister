@@ -288,7 +288,9 @@ static TsEqSpectrum *node_spectrum(TsMatrixEffects *f,const TsMatrixEffectNode *
 static void recall_track(TsMatrixEffects *f,const TsSourceRoute *route,float peak,int hit)
 {
     if(!f)return;
-    unsigned mask=f->recall_mask & ~f->suspended;
+    /* A sounding tracker lane remains an independent source when a parked
+       Gallery movement also owns this send. The matrix handles its own audio. */
+    unsigned mask=f->recall_mask;
     for(int i=0;mask;++i,mask>>=1) {
         unsigned gain=route->matrix_gain[TS_MATRIX_EFFECT_BASE+i];
         if(!(mask&1) || !gain)continue;
