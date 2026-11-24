@@ -720,7 +720,11 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
             TsSourceRoute raw=mx_route(n->row,pages,bank),r=mx_display_route(raw);
             if(n->row.kind==3 && !raw.matrix_enabled) {
                 int selected=fx_wire_selected(n->row,TS_FX_MOSAIC_BUS)>=0;uint32_t custom=fx_wire_color(n->row,TS_FX_MOSAIC_BUS);
-                if(bus && layer==(focus && selected)){float x,y,xx,yy;fx_navigation_endpoints(n,TS_FX_MOSAIC_BUS,&x,&y,&xx,&yy);fx_cables_add_signal(x,y,xx,yy,fx_focus_color(selected?MX_YELLOW:custom?custom:FX_DIM,n,bus),0,n->level);}
+                if(bus && layer==(focus && selected)) {
+                    uint32_t color=selected?MX_YELLOW:custom?custom:FX_DIM;
+                    float x,y,xx,yy;fx_navigation_endpoints(n,TS_FX_MOSAIC_BUS,&x,&y,&xx,&yy);
+                    fx_cables_add_signal(x,y,xx,yy,fx_focus_color(color,n,bus),0,n->level,color);
+                }
                 continue;
             }
             for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)if(r.matrix_gain[d] && fx_canvas.dest[d]>=0) {
@@ -731,13 +735,14 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                     (mx_same(n->row,w->selection[0]) || mx_same(to->row,w->selection[0]));
                 if(focus && layer!=related)continue;
                 uint32_t custom=fx_wire_color(n->row,d);
-                uint32_t color=selected?MX_YELLOW:custom?custom:delayed?MX_AMBER:sc?0xffbc98ccu:FX_CABLE;
+                uint32_t flow_color=selected?MX_YELLOW:custom?custom:delayed?MX_AMBER:sc?0xffbc98ccu:FX_CABLE;
+                uint32_t color=flow_color;
                 if(focus && !related)color=fx_tint(color,FX_BG);
                 float x=fx_xf(n->x+fx_node_w(n)),y=fx_yf(n->y+fx_node_h(n)*.5f),xx=fx_xf(to->x),yy=fx_yf(to->y+fx_node_h(to)*(sc?.8f:.5f));
                 fx_navigation_endpoints(n,d,&x,&y,&xx,&yy);
                 float level=w->layout->canvas_flow && w->controls.enabled && mx_destination_available(d)?
                     n->level*fabsf(r.matrix_gain[d]*.001f):0;
-                if(level>.0001f)fx_cables_add_signal(x,y,xx,yy,fx_focus_color(color,n,to),0,level);
+                if(level>.0001f)fx_cables_add_signal(x,y,xx,yy,fx_focus_color(color,n,to),0,level,flow_color);
                 else fx_cables_add(x,y,xx,yy,fx_focus_color(color,n,to));
             }
         }
@@ -865,7 +870,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
         const char *tools[]={"MOVEMENTS","PROJECT","VIEW SIZES"};
         for(int i=0;i<3;++i){TsUiRect r=fx_toolbar_rect(FX_TOOL_NAVIGATOR+i);fx_button(r.x,r.y,r.w,tools[i],0);}
         TsUiRect flow=fx_toolbar_rect(FX_TOOL_FLOW);
-        fx_button(flow.x,flow.y,flow.w,"FLOW",w->layout->canvas_flow);
+        fx_button(flow.x,flow.y,flow.w,"FLOW F",w->layout->canvas_flow);
         mx_rect(flow.x+10,flow.y+7,14,14,w->layout->canvas_flow?FX_FOCUS:FX_DIM);
         mx_rect(flow.x+12,flow.y+9,10,10,w->layout->canvas_flow?FX_FOCUS:FX_PANEL);
     }

@@ -135,10 +135,28 @@ static void cable_drawing(const char *dir)
     mx_rect(0,0,MATRIX_W,MATRIX_H,FX_BG);
     fx_cables_begin();fx_cables_add(110,200,520,400,FX_CABLE);fx_cables_end();
     memcpy(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base));
-    fx_cables_begin();fx_cables_add_signal(110,200,520,400,FX_CABLE,0,.5f);fx_cables_end();
+    const uint32_t signal=0xff28cf8bu;
+    fx_cables_begin();fx_cables_add_signal(110,200,520,400,FX_CABLE,0,.5f,signal);fx_cables_end();
     assert(!fx_cable_cache.changed);
-    fx_flow_dots(fx_cables_area(),200);
-    assert(fx_flow_visible && memcmp(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base)));
+    FxCableCommand cable=fx_cable_cache.commands[0],scaled=cable;
+    scaled.xx=scaled.x+(scaled.xx-scaled.x)*.2f;
+    scaled.yy=scaled.y+(scaled.yy-scaled.y)*.2f;
+    unsigned trip=fx_flow_period(cable,1);
+    assert(trip>=4000 && trip==fx_flow_period(scaled,.2f));
+    assert(fx_flow_period((FxCableCommand){.xx=15},1)>=4000);
+    FxPoint center=fx_device_point(fx_flow_position(cable,.5f,straight));
+    const size_t size=(size_t)saved_w*saved_h;
+    size_t pixels[2]={0};
+    float zoom=w->layout->canvas_zoom;
+    for(int i=0;i<2;++i) {
+        w->layout->canvas_zoom=i?.18f:1.5f;
+        fx_flow_dots(fx_cables_area(),fx_flow_period(cable,w->layout->canvas_zoom)/2);
+        assert(fx_flow_visible && w->pixels[(size_t)(int)center.y*saved_w+(int)center.x]==signal);
+        for(size_t p=0;p<size;++p)pixels[i]+=w->pixels[p]!=base[p];
+        memcpy(w->pixels,base,size*sizeof(*base));
+    }
+    assert(pixels[0]>=20 && pixels[1]>2*pixels[0]);
+    w->layout->canvas_zoom=zoom;
     fx_cables_begin();fx_cables_add(110,200,520,400,FX_CABLE);fx_cables_end();
     fx_flow_dots(fx_cables_area(),400);
     assert(!fx_flow_visible && !fx_cable_cache.changed && !memcmp(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base)));

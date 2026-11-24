@@ -16,6 +16,15 @@ static void canvas_cache(void)
     assert(mx_present_count==frames && fx_graph_cache.builds==builds && mx_order_cache.sorts==sorts);
     assert(!w->layout->canvas_flow);
     toolbar_click(FX_TOOL_FLOW);assert(w->layout->canvas_flow);
+    key(SDLK_f,KMOD_NONE);assert(!w->layout->canvas_flow);
+    SDL_Event flow;SDL_zero(flow);flow.type=SDL_KEYDOWN;
+    flow.key.keysym.scancode=SDL_SCANCODE_F;
+    flow.key.windowID=SDL_GetWindowID(main_window);
+    event(&flow);assert(!w->layout->canvas_flow);
+    flow.key.windowID=w->id;
+    assert(event(&flow) && w->layout->canvas_flow);
+    flow.key.repeat=1;assert(event(&flow) && w->layout->canvas_flow);
+    flow.type=SDL_KEYUP;assert(event(&flow) && w->layout->canvas_flow);
     view_codec();
     for(int i=0;i<3;++i)cache_poll();
     frames=mx_present_count;builds=fx_graph_cache.builds;

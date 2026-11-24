@@ -215,7 +215,7 @@ static float fx_cable(float x,float y,float xx,float yy,uint32_t color,int draw,
 /* Quiet cables need no continuous rasterization. Compare the exact ordered
    draw commands (not a lossy hash), and cache only the graph background/cables.
    Nodes, meters, drag previews and selection outlines remain live. */
-typedef struct {float x,y,xx,yy;uint32_t color,control;float level;} FxCableCommand;
+typedef struct {float x,y,xx,yy;uint32_t color,control;float level;uint32_t flow_color;} FxCableCommand;
 static int fx_flow_visible;
 static struct {
     FxCableCommand *commands;
@@ -252,13 +252,51 @@ static int fx_flow_intersects(FxCableCommand c,int straight)
     float bend=straight?0:fx_cable_bend(c.x,c.xx);
     return fmaxf(c.xx,c.x+bend)>=20 && fminf(c.x,c.xx-bend)<fx_right();
 }
+static unsigned fx_flow_period(FxCableCommand c,float zoom)
+{
+    /* Time the trip by canvas distance, so zooming out doesn't speed it up.
+       Half-second steps keep tiny coordinate changes from shifting the phase. */
+    float length=hypotf(c.xx-c.x,c.yy-c.y)/zoom;
+    return 4000u+(unsigned)fminf(8000.f,500.f*roundf(length/100.f));
+}
+static uint32_t fx_flow_ink(uint32_t cable)
+{
+    unsigned light=(54*((cable>>16)&255)+183*((cable>>8)&255)+19*(cable&255))/256;
+    return light>=150?cable:fx_blend_ink(cable,0xffffffffu,(150-light)*255/(255-light));
+}
+static void fx_draw_flow_dot(SDL_Rect clip,FxPoint center,float radius,float rim_width,uint32_t ink)
+{
+    const float support=radius+.5f,inner=radius-rim_width;
+    const float full_ink=(inner-.5f)*(inner-.5f),outside=support*support;
+    const uint32_t rim=0xff14161cu;
+    int stride=mx_pixel_w();
+    int left=SDL_max(clip.x,(int)floorf(center.x-support));
+    int right=SDL_min(clip.x+clip.w,(int)ceilf(center.x+support));
+    int top=SDL_max(clip.y,(int)floorf(center.y-support));
+    int bottom=SDL_min(clip.y+clip.h,(int)ceilf(center.y+support));
+    for(int y=top;y<bottom;++y) {
+        float dy=y+.5f-center.y;
+        uint32_t *row=matrix_window.pixels+(size_t)y*stride;
+        for(int x=left;x<right;++x) {
+            float dx=x+.5f-center.x,distance_squared=dx*dx+dy*dy;
+            if(distance_squared>=outside)continue;
+            if(distance_squared<=full_ink){row[x]=ink;continue;}
+            float distance=sqrtf(distance_squared);
+            float core=SDL_clamp(inner+.5f-distance,0,1);
+            uint32_t color=fx_blend_ink(rim,ink,(unsigned)(core*255.f+.5f));
+            float coverage=support-distance;
+            row[x]=coverage>=1?color:fx_blend_ink(row[x],color,(unsigned)(coverage*255.f+.5f));
+        }
+    }
+}
 static void fx_flow_dots(SDL_Rect clip,Uint64 now)
 {
     /* Keep animated work bounded on large patches. Sample across the command
        list so a dense first bank cannot consume every visible dot. */
     enum { FX_FLOW_DOT_LIMIT=128 };
-    const int straight=matrix_window.layout->canvas_straight,stride=mx_pixel_w();
-    const uint32_t ink=FX_TEXT;
+    const int straight=matrix_window.layout->canvas_straight;
+    const float zoom=matrix_window.layout->canvas_zoom,density=fmaxf(1,fx_stroke.scale);
+    const float overview=SDL_clamp((1.2f-zoom)/1.05f,0,1);
     size_t active=0;
     for(size_t i=0;i<fx_cable_cache.count;++i)active+=fx_flow_intersects(fx_cable_cache.commands[i],straight);
     fx_flow_visible=active!=0;
@@ -267,19 +305,11 @@ static void fx_flow_dots(SDL_Rect clip,Uint64 now)
     for(size_t i=0;i<fx_cable_cache.count;++i) {
         FxCableCommand c=fx_cable_cache.commands[i];
         if(!fx_flow_intersects(c,straight) || index++%step)continue;
-        unsigned duration=(unsigned)SDL_clamp(hypotf(c.xx-c.x,c.yy-c.y)*2.4f,440.f,2100.f);
-        float t=(float)((now+i*137)%duration)/duration;
+        unsigned duration=fx_flow_period(c,zoom);
+        float t=(float)((now+i*377)%duration)/duration;
         FxPoint p=fx_device_point(fx_flow_position(c,t,straight));
-        float support=(1.7f+fminf(c.level*8,1.f)*.55f)*fmaxf(1,fx_stroke.scale)+.5f;
-        int l=SDL_max(clip.x,(int)floorf(p.x-support)),r=SDL_min(clip.x+clip.w,(int)ceilf(p.x+support));
-        int top=SDL_max(clip.y,(int)floorf(p.y-support)),bottom=SDL_min(clip.y+clip.h,(int)ceilf(p.y+support));
-        for(int y=top;y<bottom;++y)for(int x=l;x<r;++x) {
-            float alpha=SDL_clamp(support-hypotf(x+.5f-p.x,y+.5f-p.y),0.f,1.f);
-            if(alpha>0) {
-                uint32_t *pixel=&matrix_window.pixels[(size_t)y*stride+x];
-                *pixel=fx_blend_ink(*pixel,ink,(unsigned)(alpha*255.f));
-            }
-        }
+        float radius=(3.4f+3.3f*overview+.4f*fminf(1,c.level*8))*density;
+        fx_draw_flow_dot(clip,p,radius,density,fx_flow_ink(c.flow_color));
     }
 }
 static void fx_cables_begin(void)
@@ -313,9 +343,9 @@ static void fx_cables_draw_command(FxCableCommand c)
     }
     fx_stroke_end(c.color);
 }
-static void fx_cables_add_signal(float x,float y,float xx,float yy,uint32_t color,unsigned control,float level)
+static void fx_cables_add_signal(float x,float y,float xx,float yy,uint32_t color,unsigned control,float level,uint32_t flow_color)
 {
-    FxCableCommand command={x,y,xx,yy,color,control,level};
+    FxCableCommand command={x,y,xx,yy,color,control,level,flow_color};
     const size_t key_size=offsetof(FxCableCommand,level);
     if(fx_cable_cache.direct){fx_cables_draw_command(command);return;}
     if(fx_cable_cache.used==fx_cable_cache.capacity) {
@@ -332,7 +362,8 @@ static void fx_cables_add_signal(float x,float y,float xx,float yy,uint32_t colo
     if(fx_canvas.bundles)for(size_t j=0;j<fx_cable_cache.used;++j) {
         FxCableCommand *existing=&fx_cable_cache.commands[j];
         if(!memcmp(&command,existing,key_size)) {
-            existing->level=fmaxf(existing->level,level);return;
+            if(level>existing->level){existing->level=level;existing->flow_color=flow_color;}
+            return;
         }
     }
     size_t i=fx_cable_cache.used++;
@@ -340,7 +371,7 @@ static void fx_cables_add_signal(float x,float y,float xx,float yy,uint32_t colo
     fx_cable_cache.commands[i]=command;
 }
 static void fx_cables_add_kind(float x,float y,float xx,float yy,uint32_t color,unsigned control)
-{fx_cables_add_signal(x,y,xx,yy,color,control,0);}
+{fx_cables_add_signal(x,y,xx,yy,color,control,0,color);}
 static void fx_cables_add(float x,float y,float xx,float yy,uint32_t color)
 {fx_cables_add_kind(x,y,xx,yy,color,0);}
 static void fx_cables_end(void)

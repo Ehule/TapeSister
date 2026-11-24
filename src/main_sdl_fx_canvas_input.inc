@@ -36,6 +36,15 @@ static void fx_bypass_selection(SDL_AudioDeviceID device,AudioState *audio,TsUiS
     mx_commit_controls(device,audio,ui);
     snprintf(w->status,sizeof(w->status),"%d EFFECT%s %s / M: TOGGLE / CTRL+Z: UNDO",count,count==1?"":"S",any?"BYPASSED":"ACTIVE");
 }
+static int fx_flow_key(SDL_Keysym key)
+{
+    return !fx_canvas.meta && (key.sym==SDLK_f || key.scancode==SDL_SCANCODE_F) &&
+        !(key.mod&(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI));
+}
+static void fx_toggle_flow(MatrixWindow *w)
+{
+    w->layout->canvas_flow=!w->layout->canvas_flow;w->dirty=1;
+}
 static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int x,int y,int wheel)
 {
     MatrixWindow *w=&matrix_window;TsMatrixLayout *l=w->layout;
@@ -57,7 +66,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     }
     if(fx_label_drag_event(e,x,y))return 1;
     if(!fx_label_visible(fx_canvas.label_selected))fx_canvas.label_selected=-1;
-    if(e->type==SDL_KEYUP){if(fx_canvas_key(e->key.keysym.sym) || fx_arrange_or_consolidate_key(e->key.keysym.sym,e->key.keysym.mod) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
+    if(e->type==SDL_KEYUP){if(fx_flow_key(e->key.keysym) || fx_canvas_key(e->key.keysym.sym) || fx_arrange_or_consolidate_key(e->key.keysym.sym,e->key.keysym.mod) || ((e->key.keysym.mod&KMOD_CTRL) && (e->key.keysym.sym==SDLK_a || e->key.keysym.sym==SDLK_n || e->key.keysym.sym==SDLK_c || e->key.keysym.sym==SDLK_v)))return 1;
         e->key.windowID=SDL_GetWindowID(main);return 0;}
     if(fx_canvas.movement_popup) {
         if(e->type==SDL_KEYDOWN && e->key.keysym.sym==SDLK_ESCAPE)fx_canvas.movement_popup=0;
@@ -90,7 +99,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
         }
         if(fx_toolbar_hit(FX_TOOL_LAYOUT,x,y)){begin_mosaic_layout(ui);return 1;}
         if(!fx_canvas.meta && fx_toolbar_hit(FX_TOOL_FLOW,x,y)) {
-            l->canvas_flow=!l->canvas_flow;w->dirty=1;return 1;
+            fx_toggle_flow(w);return 1;
         }
     }
     if(fx_canvas.popup)return fx_popup_event(e,x,y,wheel,device,audio,ui,pages,bank);
@@ -106,6 +115,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
     }
     if(e->type==SDL_KEYDOWN) {
         SDL_Keycode key=e->key.keysym.sym;int mod=e->key.keysym.mod;
+        if(fx_flow_key(e->key.keysym)){if(!e->key.repeat)fx_toggle_flow(w);return 1;}
         if(e->key.repeat && (fx_canvas_key(key) || (mod&KMOD_CTRL)))return 1;
         if(key==SDLK_s && (mod&KMOD_CTRL) && !(mod&KMOD_GUI)) {
             if(!ui_blocking_dialog_open_except_workspaces(ui)) {

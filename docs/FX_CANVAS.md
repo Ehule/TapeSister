@@ -317,6 +317,7 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | F2 / right-click then Name / color | Edit name and color; with multiple selected cards, apply color to the selection with names disabled |
 | F2 on selected cables / right-click then Cable color | Edit cable color, or the selected cable group; colors save with the project and support Undo/Redo |
 | E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor; press E again in FX Canvas to return to Mosaic |
+| F | Toggle FLOW in the outer FX Canvas |
 | Grave (backtick) in FX Canvas | Return directly to Mosaic |
 | Escape in FX Canvas | Return to Mosaic; active gestures/dialogs cancel first |
 
