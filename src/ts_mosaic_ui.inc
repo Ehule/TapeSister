@@ -132,6 +132,17 @@ static void mosaic_envelope(const TsMosaicSource *s,size_t first,size_t last,flo
 #include "ts_mosaic_grid_ui.inc"
 #include "ts_mosaic_array_ui.inc"
 
+static void mosaic_card_edges(const MosaicFadeSurface *s,int64_t x,int64_t y,int64_t right,int64_t bottom,
+    uint32_t accent,uint32_t edge,int selected)
+{
+    int64_t width=(int64_t)fmax(1,round(s->sx*(selected?1.25:.55)));
+    int64_t height=(int64_t)fmax(1,round(s->sy*(selected?1.25:.55)));
+    mosaic_fade_rect(s,x,y,right,y+height,accent);
+    mosaic_fade_rect(s,x,y+height,x+width,bottom-height,accent);
+    mosaic_fade_rect(s,right-width,y+height,right,bottom-height,edge);
+    mosaic_fade_rect(s,x,bottom-height,right,bottom,edge);
+}
+
 static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEvent *e,int selected,int dim,int ghost)
 {
     if(!e->source)return;
@@ -150,7 +161,8 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     MosaicCardStyle style=mosaic_card_style(ui,e,width,bottom-top,selected);
     int hovered=e->id==ui->mosaic_hover_event;
-    if(style.compact)fill=mosaic_mix_color(fill,color,dim?.10f:selected?.28f:.18f);
+    if(style.compact)fill=mosaic_mix_color(fill,color,dim?.10f:selected?.32f:.24f);
+    MosaicFadeSurface fades={fb->pixels,TS_UI_WIDTH,151,66,ts_ui_mosaic_canvas_right(ui),TS_MOSAIC_CANVAS_BOTTOM,1,1,scale};
     if(!ghost)mosaic_canvas_rect(fb,ui,x,y,w,h,fill);
     if(width<8 || bottom-top<8) {
         mosaic_canvas_rect(fb,ui,x,y,w,h,selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):hovered?mosaic_hover_color(color):color);return;
@@ -158,15 +170,12 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
     if(e->source->video_path[0]) {
         color=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):hovered?mosaic_hover_color(RGB(133,190,239)):RGB(133,190,239);
         if(ghost)color=mosaic_mix_color(color,RGB(16,18,24),.55f);
-        mosaic_canvas_rect(fb,ui,x,y,w,2,color);mosaic_canvas_rect(fb,ui,x,y,2,h,color);mosaic_canvas_rect(fb,ui,x,end-2,w,2,color);
+        mosaic_card_edges(&fades,x,(int64_t)top,x+w,(int64_t)bottom,color,mosaic_mix_color(color,fill,.4f),selected);
         if(x>=151 && top>=66 && style.chars>0){char label[64];int chars=style.chars;
             snprintf(label,sizeof(label),"%.*s",chars,style.compact?"VISUAL":ts_mosaic_video_overridden(ui->mosaic,e)?"VISUAL / OVERRIDDEN":e->source->video_pool?"VISUAL / RANDOM POOL":"VISUAL / FILE");
             text(fb,x+(int)style.margin,y+(style.compact?2:5),label,color,1);
             if(!style.compact && h>23){snprintf(label,sizeof(label),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");text(fb,x+5,y+15,label,color,1);}}
-        if(!ghost && style.focused) {
-            MosaicFadeSurface grips={fb->pixels,TS_UI_WIDTH,151,66,ts_ui_mosaic_canvas_right(ui),TS_MOSAIC_CANVAS_BOTTOM,1,1,scale};
-            mosaic_resize_handles(&grips,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,selected);
-        }
+        if(!ghost && style.focused)mosaic_resize_handles(&fades,ui,e,x,(int64_t)top,x+w,(int64_t)bottom,selected);
         return;
     }
     double duration=e->source->pattern?e->source->pattern->duration:(double)(e->last-e->first)/e->source->sample.sample_rate;
@@ -202,17 +211,9 @@ static void mosaic_card(TsFramebuffer *fb,const TsUiState *ui,const TsMosaicEven
         for(int yy=y;yy<end;yy+=6){mosaic_canvas_rect(fb,ui,x,yy,1,3,color);mosaic_canvas_rect(fb,ui,x+w-1,yy,1,3,color);}
         return;
     }
-    MosaicFadeSurface fades={fb->pixels,TS_UI_WIDTH,151,66,ts_ui_mosaic_canvas_right(ui),TS_MOSAIC_CANVAS_BOTTOM,1,1,scale};
-    mosaic_fade_shape(&fades,e,x,(int64_t)top,x+w,(int64_t)bottom,color);
-    mosaic_canvas_rect(fb,ui,x,y,2,h,color);mosaic_canvas_rect(fb,ui,x+w-1,y,1,h,color);
-    if(top>=66)mosaic_canvas_rect(fb,ui,x,y,w,1,color);
-    if(bottom<TS_MOSAIC_CANVAS_BOTTOM)mosaic_canvas_rect(fb,ui,x,end-1,w,1,color);
-    if(selected || hovered) {
-        uint32_t border=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):mosaic_hover_color(color);
-        mosaic_canvas_rect(fb,ui,x,y,2,h,border);mosaic_canvas_rect(fb,ui,x+w-2,y,2,h,border);
-        if(top>=66)mosaic_canvas_rect(fb,ui,x,y,w,2,border);
-        if(bottom<TS_MOSAIC_CANVAS_BOTTOM)mosaic_canvas_rect(fb,ui,x,end-2,w,2,border);
-    }
+    uint32_t border=selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):hovered?mosaic_hover_color(color):color;
+    mosaic_fade_shape(&fades,e,x,(int64_t)top,x+w,(int64_t)bottom,style.focused?border:mosaic_mix_color(color,fill,.30f));
+    mosaic_card_edges(&fades,x,(int64_t)top,x+w,(int64_t)bottom,border,style.focused?border:mosaic_mix_color(border,fill,.4f),selected);
     char label[100];
     if(top>=66 && style.chars>0 && x>=151) {
         int chars=(int)fmin(style.chars,(ts_ui_mosaic_canvas_right(ui)-x-style.margin)/6);
@@ -528,7 +529,8 @@ static void mosaic_render(TsFramebuffer *fb,const TsUiState *ui,const TsInstrume
         int y=66+(int)((t-ui->mosaic_scroll)*scale);
         mosaic_time_label(label,sizeof(label),t,ui->mosaic_seconds_only);
         if(mosaic_ruler_label_visible(ui,t))mosaic_ruler_label(fb,y+2,label);
-        rect(fb,147,y,484,1,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(28,30,35)));
+        rect(fb,151,y,480,1,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_PANEL,RGB(28,30,35)));
+        rect(fb,145,y,6,1,ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_EDGE,RGB(72,65,77)));
     }
     mosaic_grid_lines(fb,ui,scale);
     if(range.end>range.start)for(int edge=0;edge<2;++edge) {

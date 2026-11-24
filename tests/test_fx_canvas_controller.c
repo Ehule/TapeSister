@@ -85,8 +85,8 @@ static void screenshot(const char *path)
     SDL_Surface *frame=rendered_frame();
     assert(!SDL_SaveBMP(frame,path));SDL_FreeSurface(frame);
 }
-/* Check the 5 x 7 letter from pixels actually presented by SDL, including the
-   smaller parameter font and the second line of a wrapped graph-node title. */
+/* Check the 5 x 7 letter from pixels actually presented by SDL, including
+   the compact canvas title and the inspector's larger section heading. */
 static void check_letter(SDL_Surface *frame,int x,int y,char letter,int scale,uint32_t ink)
 {
     FxFontMetrics f=fx_font(scale);
@@ -114,7 +114,7 @@ static void laptop_legibility(const char *dir,uint32_t effect_id)
         SDL_Surface *frame=rendered_frame();
         assert(frame->w==w->pixel_w && frame->h==w->pixel_h);
         FxCanvasNode *bus=node(TS_MATRIX_TRACKER);assert(bus);
-        check_letter(frame,fx_x(bus->x)+7,fx_y(bus->y)+7+fx_line_height(fx_font(2)),'B',2,FX_TEXT);
+        check_letter(frame,fx_x(bus->x)+7,fx_y(bus->y)+7,'T',1,FX_TEXT);
         char path[1024];
         if(dir && !i){snprintf(path,sizeof(path),"%s/idle.bmp",dir);assert(!SDL_SaveBMP(frame,path));}
         SDL_FreeSurface(frame);

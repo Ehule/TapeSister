@@ -12,17 +12,22 @@ static void mosaic_markers_render(TsFramebuffer *fb,const TsUiState *ui)
     uint32_t ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DATA2,RGB(129,206,200));
     uint32_t dim=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_DIM,RGB(133,127,141));
     uint32_t background=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_BACKGROUND,RGB(11,13,16));
+    uint32_t quiet=mosaic_mix_color(ink,background,.75f),focus=mosaic_mix_color(ink,background,.48f);
+    uint32_t label_ink=ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233));
+    uint32_t selected_panel=mosaic_mix_color(ink,panel,.80f);
     for(int i=0;i<TS_MOSAIC_MARKERS;++i) {
         int y=ts_ui_mosaic_marker_y(ui,i);if(y<0)continue;
         double time=ui->mosaic_marker_drag==i+1?ui->mosaic_marker_preview:ui->mosaic->markers[i].time;
         int line=66+(int)((time-ui->mosaic_scroll)*(ui->mosaic_scale>0?ui->mosaic_scale:24));
-        if(!active_waveform_detail || !active_waveform_detail[0].valid)
-        for(int x=151;x<ts_ui_mosaic_canvas_right(ui);x+=7)rect(fb,x,line,3,1,mosaic_mix_color(ink,background,.75f));
-        char label[4];snprintf(label,sizeof(label),"%02d",i+1);
         int active=ui->mosaic_marker_selected==i+1;
+        if(!active_waveform_detail || !active_waveform_detail[0].valid)
+            for(int x=151;x<ts_ui_mosaic_canvas_right(ui);x+=7)rect(fb,x,line,3,1,active?focus:quiet);
         if(active_waveform_detail && active_detail_count>1 && active_waveform_detail[1].valid)continue;
-        rect(fb,113,y,38,10,panel);rect(fb,127,y,24,10,active?ink:panel);
-        text(fb,132,y+2,label,active?background:ink,1);
+        char label[4];snprintf(label,sizeof(label),"%02d",i+1);
+        rect(fb,113,y,38,10,panel);
+        rect(fb,128,y,23,10,active?selected_panel:panel);
+        rect(fb,150,y,1,10,active?ink:focus);
+        text(fb,134,y+2,label,active?label_ink:ink,1);
     }
     rect(fb,0,358,640,22,panel);
     mosaic_button(fb,10,TS_MOSAIC_MARKER_Y,50,"VIEWS",ui->mosaic_views_open,1);

@@ -478,25 +478,66 @@ static void fx_rect(int x,int y,int width,int height,uint32_t color)
     if(r>x && b>y)mx_rect(x,y,r-x,b-y,color);
 }
 #include "main_sdl_fx_canvas_draw.inc"
-static void fx_node_rect(int x,int y,int width,int height,const char *name,const char *compact,
+static uint32_t fx_tint(uint32_t a,uint32_t b)
+{return 0xff000000u | (((a&0x00fefefeu)>>1)+((b&0x00fefefeu)>>1));}
+
+static void fx_card_pixels(SDL_Rect clip,int x,int y,int right,int bottom,uint32_t ink)
+{
+    mx_fill_pixels(SDL_max(x,clip.x),SDL_max(y,clip.y),
+                   SDL_min(right,clip.x+clip.w),SDL_min(bottom,clip.y+clip.h),ink);
+}
+
+static void fx_node_rect(float left,float top,float right,float bottom,const char *name,const char *compact,
     const char *detail,uint32_t color,int selected,float factor)
 {
-    if(x+width<20 || x>fx_right() || y+height<FX_TOP || y>FX_BOTTOM)return;
-    fx_rect(x,y,width,height,selected?FX_FOCUS:color);
-    fx_rect(x+2,y+2,width-4,height-4,FX_PANEL);
-    if(height>14)fx_rect(x+5,y+height-10,width-10,5,color);
-    if(selected)fx_rect(x+3,y+3,width-6,3,FX_FOCUS);
-    SDL_Rect graph={20,FX_TOP,fx_right()-20,FX_BOTTOM-FX_TOP};
-    int pad=SDL_max(2,(int)lroundf(7*factor));
-    int show_detail=width>=180*factor && height>=76*factor && detail && detail[0];
-    SDL_Rect title={x+pad,y+pad,width-2*pad,height-(int)((show_detail?40:18)*factor)};
-    int scale=2;
-    if(!fx_name_fits(name,title,scale,factor)) {
-        if(fx_name_fits(name,title,1,factor))scale=1;
-        else {name=compact;if(!fx_name_fits(name,title,scale,factor))scale=1;}
+    if(right<=20 || left>=fx_right() || bottom<=FX_TOP || top>=FX_BOTTOM)return;
+    FxPoint a=fx_device_point((FxPoint){left,top}),b=fx_device_point((FxPoint){right,bottom});
+    int l=(int)lroundf(a.x),t=(int)lroundf(a.y),r=(int)lroundf(b.x),bt=(int)lroundf(b.y);
+    if(r<=l || bt<=t)return;
+    int stroke=SDL_max(1,(int)lroundf(fx_stroke.scale*(selected?1.5f:1.0f)));
+    int x=(int)lroundf(left),y=(int)lroundf(top);
+    int width=(int)lroundf(right)-x,height=(int)lroundf(bottom)-y;
+    SDL_Rect clip=fx_cables_area();
+    uint32_t panel=FX_PANEL;
+    uint32_t edge=selected?FX_FOCUS:fx_tint(color,panel);
+    uint32_t accent=selected?FX_FOCUS:color;
+    if(r-l<=2*stroke || bt-t<=2*stroke) {
+        fx_card_pixels(clip,l,t,r,bt,accent);
+        return;
     }
-    fx_text_box_scaled(title,graph,name,color==FX_MUTED?FX_DIM:FX_TEXT,scale,2,factor);
-    if(show_detail)fx_text_box_scaled((SDL_Rect){x+pad,y+height-(int)(30*factor),width-2*pad,(int)(19*factor)},graph,detail,FX_DIM,1,1,factor);
+    fx_card_pixels(clip,l+stroke,t+stroke,r-stroke,bt-stroke,panel);
+    fx_card_pixels(clip,l,t,r,t+stroke,accent);
+    fx_card_pixels(clip,l,bt-stroke,r,bt,edge);
+    fx_card_pixels(clip,l,t+stroke,l+stroke,bt-stroke,edge);
+    fx_card_pixels(clip,r-stroke,t+stroke,r,bt-stroke,edge);
+    SDL_Rect graph={20,FX_TOP,fx_right()-20,FX_BOTTOM-FX_TOP};
+    int pad=SDL_max(2,(int)lroundf((height<44*factor?4:7)*factor));
+    int show_detail=width>=180*factor && height>=76*factor && detail && detail[0];
+    SDL_Rect title={x+pad,y+pad,width-2*pad,height-pad-(int)((show_detail?30:4)*factor)};
+    if(!fx_name_fits(name,title,1,factor))name=compact;
+    fx_text_box_scaled(title,graph,name,color==FX_MUTED?FX_DIM:FX_TEXT,1,2,factor);
+    if(show_detail)fx_text_box_scaled((SDL_Rect){x+pad,y+height-(int)(27*factor),width-2*pad,(int)(18*factor)},graph,detail,FX_DIM,1,1,factor);
+}
+
+typedef enum {FX_PORT_AUDIO,FX_PORT_SIDECHAIN,FX_PORT_MODULATION} FxPortShape;
+static void fx_draw_port(float x,float y,uint32_t ink,FxPortShape shape)
+{
+    SDL_Rect clip=fx_cables_area();
+    FxPoint center=fx_device_point((FxPoint){x,y});
+    int cx=(int)lroundf(center.x),cy=(int)lroundf(center.y);
+    int unit=SDL_max(1,(int)lroundf(fx_stroke.scale));
+    int radius=unit*(shape==FX_PORT_AUDIO && matrix_window.layout->canvas_zoom<.45f?1:2);
+    if(shape==FX_PORT_SIDECHAIN) {
+        for(int dy=-radius;dy<=radius;++dy) {
+            int span=radius-abs(dy);
+            fx_card_pixels(clip,cx-span,cy+dy,cx+span+1,cy+dy+1,ink);
+        }
+    } else if(shape==FX_PORT_MODULATION) {
+        fx_card_pixels(clip,cx-radius,cy,cx+radius+1,cy+unit,ink);
+        fx_card_pixels(clip,cx,cy-radius,cx+unit,cy+radius+1,ink);
+    } else {
+        fx_card_pixels(clip,cx-radius,cy-radius,cx+radius+1,cy+radius+1,ink);
+    }
 }
 static void fx_chain_cable(int x,int y,int xx,int yy)
 {
@@ -519,20 +560,20 @@ static void fx_meta_paint(TsMatrixEffectControls *c)
     TsMetaControls *rack=&c->meta;char label[80];
     snprintf(label,sizeof(label),"FX CANVAS / %.31s",rack->name);mx_text(24,78,label,MX_AMBER,2);
     int previous_x=108,previous_y=210;
-    fx_node_rect(26,180,82,60,"IN","IN","",MX_GREEN,0,1);
+    fx_node_rect(26,180,108,240,"IN","IN","",MX_GREEN,0,1);
     for(int i=0;i<rack->count;++i) {
         int col=i<4?i:7-i,x=146+col*270,y=i<4?174:418;
         int inx=i<4?x:x+FX_NODE_W,outx=i<4?x+FX_NODE_W:x;
         fx_chain_cable(previous_x,previous_y,inx,y+FX_NODE_H/2);
         const TsMetaStage *s=&rack->stage[i];snprintf(label,sizeof(label),"STAGE %d / %s",i+1,s->enabled?"ACTIVE":"BYPASS");
-        fx_node_rect(x,y,FX_NODE_W,FX_NODE_H,ts_sister_fx_type_name(s->type),ts_matrix_effect_short_name(s->type),label,s->enabled?fx_color(s->type):FX_MUTED,0,1);
+        fx_node_rect(x,y,x+FX_NODE_W,y+FX_NODE_H,ts_sister_fx_type_name(s->type),ts_matrix_effect_short_name(s->type),label,s->enabled?fx_color(s->type):FX_MUTED,0,1);
         previous_x=outx;previous_y=y+FX_NODE_H/2;
     }
     int reverse=rack->count>4 || rack->count==4;
     int out_x=rack->count>4?SDL_max(26,previous_x-130):rack->count==4?1090:previous_x+40;
     int out_y=rack->count==4?300:previous_y-30;
     fx_chain_cable(previous_x,previous_y,reverse?out_x+82:out_x,out_y+30);
-    fx_node_rect(out_x,out_y,82,60,"OUT","OUT","",MX_GREEN,0,1);
+    fx_node_rect(out_x,out_y,out_x+82,out_y+60,"OUT","OUT","",MX_GREEN,0,1);
     mx_text(26,600,"Double-click a stage to edit its parameters and mappings.",FX_TEXT,2);
     mx_text(26,628,"Patch parallel branches on the outer canvas.",FX_DIM,2);
     for(int i=0;i<4;++i) {
@@ -641,7 +682,7 @@ static void fx_paint_cables(TsSamplePages *pages,TsInstrument *bank)
                 if(focus && layer!=related)continue;
                 uint32_t custom=fx_wire_color(n->row,d);
                 uint32_t color=selected?MX_YELLOW:custom?custom:delayed?MX_AMBER:sc?0xffbc98ccu:FX_CABLE;
-                if(focus && !related)color=0xff000000u | (((color&0x00fefefeu)>>1)+((FX_BG&0x00fefefeu)>>1));
+                if(focus && !related)color=fx_tint(color,FX_BG);
                 float x=fx_xf(n->x+fx_node_w(n)),y=fx_yf(n->y+fx_node_h(n)*.5f),xx=fx_xf(to->x),yy=fx_yf(to->y+fx_node_h(to)*(sc?.8f:.5f));
                 fx_navigation_endpoints(n,d,&x,&y,&xx,&yy);
                 fx_cables_add(x,y,xx,yy,fx_focus_color(color,n,to));
@@ -679,15 +720,18 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
        distant zooms draw only major dots, keeping paint cost bounded. */
     float grid=FX_GRID;while(grid*w->layout->canvas_zoom<16)grid*=2;
     float gx=ceilf(-w->layout->canvas_x/grid)*grid,gy=ceilf(-w->layout->canvas_y/grid)*grid;
+    uint32_t grid_ink=fx_tint(FX_EDGE,FX_BG);
     for(float xx=gx;fx_xf(xx)<fx_right();xx+=grid)
-        for(float yy=gy;fx_yf(yy)<FX_BOTTOM;yy+=grid)fx_rect(fx_x(xx),fx_y(yy),1,1,FX_EDGE);
+        for(float yy=gy;fx_yf(yy)<FX_BOTTOM;yy+=grid)fx_rect(fx_x(xx),fx_y(yy),1,1,grid_ink);
     TsMatrixEffectControls *meta=fx_meta();
     if(meta)fx_meta_paint(meta);
     else {
         fx_groups_paint();
         fx_paint_cables(pages,bank);
         for(int i=0;i<fx_canvas.count;++i) {
-            FxCanvasNode *n=&fx_canvas.node[i];int x=fx_x(n->x),y=fx_y(n->y),width=(int)(fx_node_w(n)*w->layout->canvas_zoom),height=(int)(fx_node_h(n)*w->layout->canvas_zoom);
+            FxCanvasNode *n=&fx_canvas.node[i];
+            float l=fx_xf(n->x),t=fx_yf(n->y),r=fx_xf(n->x+fx_node_w(n)),b=fx_yf(n->y+fx_node_h(n));
+            if(r<14 || l>fx_right()+6 || b<FX_TOP || t>FX_BOTTOM)continue;
             int slot=n->row.kind==4?ts_matrix_effect_index(n->row.index):-1;
             const TsMatrixEffectControls *c=slot>=0?&w->controls.effect[slot]:NULL;
             const char *detail=n->at<0?(mx_destination_available(n->destination)?"OUTPUT / RECEIVER":"N/A / PORT NOT OPEN"):c?(c->enabled?(c->type==TS_MATRIX_FX_META?"DOUBLE-CLICK TO ENTER":"ACTIVE / SELECT TO EDIT"):"BYPASS"):"BUS / PATCH ENDPOINT";
@@ -716,13 +760,17 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
                 color=mixed;detail="PLAYING";
             }
             color=fx_focus_color(color,n,n);
-            fx_node_rect(x,y,width,height,title,compact,detail,color,fx_chosen(n->row),n->scale);
-            if(n->destination>=0 && (!c || c->type!=TS_MATRIX_FX_MODULATOR))fx_rect(x-4,y+height/2-4,9,9,color);
-            if(n->at>=0)fx_rect(x+width-4,y+height/2-4,9,9,color);
+            fx_node_rect(l,t,r,b,title,compact,detail,color,fx_chosen(n->row),n->scale);
+            float middle=fx_yf(n->y+fx_node_h(n)*.5f);
+            int modulation=c && c->type==TS_MATRIX_FX_MODULATOR;
+            if(n->destination>=0 && !modulation)fx_draw_port(l,middle,color,FX_PORT_AUDIO);
+            if(n->at>=0)fx_draw_port(r,middle,color,modulation?FX_PORT_MODULATION:FX_PORT_AUDIO);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
-            if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))fx_rect(x-4,y+(int)(height*.8f)-4,9,9,color);
+            if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))
+                fx_draw_port(l,fx_yf(n->y+fx_node_h(n)*.8f),color,FX_PORT_SIDECHAIN);
             float peak=(n->row.kind==2 || n->row.kind==4)?w->peaks[n->row.index]:0;
-            if(peak>0 && x>20 && x+width<fx_right() && y+height<FX_BOTTOM && y>=FX_TOP)mx_signal(x+8,y+height-8,width-16,3,peak,MX_GREEN);
+            if(peak>0 && r-l>22 && l>20 && r<fx_right() && b<FX_BOTTOM && t>=FX_TOP)
+                mx_signal((int)lroundf(l)+8,(int)lroundf(b)-3,(int)lroundf(r-l)-16,2,peak,MX_GREEN);
         }
         fx_labels_paint();fx_groups_titles();
         if((w->drag==FX_DRAG_WIRE || (w->drag==FX_DRAG_SHIFT_NODE && fx_canvas.shift_moved)) && fx_canvas.wire>=0) {
