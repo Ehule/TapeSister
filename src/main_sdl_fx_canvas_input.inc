@@ -295,7 +295,7 @@ static int fx_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,Audio
             else fx_connect_selected(destination,device,audio,ui,pages,bank);
             return 1;
         }
-        if(left && n->at>=0 && abs(x-(xx+ww))<12 && abs(y-(yy+hh/2))<12){fx_canvas.source=n->row;fx_canvas.wire=i;fx_canvas.destination=-1;w->drag=FX_DRAG_WIRE;fx_canvas.move_count=0;fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;return 1;}
+        if(left && n->at>=0 && !(n->row.kind==4 && w->controls.effect[n->row.index-TS_MATRIX_EFFECT_BASE].type==TS_MATRIX_FX_RECALL) && abs(x-(xx+ww))<12 && abs(y-(yy+hh/2))<12){fx_canvas.source=n->row;fx_canvas.wire=i;fx_canvas.destination=-1;w->drag=FX_DRAG_WIRE;fx_canvas.move_count=0;fx_canvas.mouse_x=x;fx_canvas.mouse_y=y;return 1;}
         if(x<xx || x>xx+ww || y<yy || y>yy+hh)continue;
         if(e->button.button==SDL_BUTTON_RIGHT){if(!fx_object_selected(n))fx_select(n,0);fx_clear_wires();fx_context_open(x,y,&n->row);return 1;}
         if(!left)return 1;

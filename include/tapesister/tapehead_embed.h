@@ -41,6 +41,8 @@ int ts_tapehead_transport_locked(int command); /* 0 pause at row, 1 play/resume,
 const uint32_t *ts_tapehead_frame(void);
 /* Cached 128x128 ARGB portrait and its native 632x400 rectangle; zero if hidden. */
 unsigned ts_tapehead_logo(const uint32_t **pixels,SDL_Rect *rect);
+struct TsMatrixEffects;
+const float *ts_tapehead_render_link(unsigned frames,unsigned rate,struct TsMatrixEffects *effects);
 const float *ts_tapehead_render(unsigned frames, unsigned rate);
 void ts_tapehead_route_outputs(unsigned available);
 const TsSourceRouteMix *ts_tapehead_clean_render(void);

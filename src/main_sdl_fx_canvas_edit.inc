@@ -234,6 +234,7 @@ static void fx_edit_selection(int remove,int wheel,SDL_AudioDeviceID device,Audi
     for(int i=0;i<fx_canvas.wires.count;++i) {
         FxCanvasWire wire=fx_canvas.wires.items[i];TsSourceRoute *r=fx_saved_route(s,wire.source);if(!r)continue;
         if(wire.destination==TS_FX_MOSAIC_BUS || fx_control_source(wire.source)>=0)continue;
+        if(wire.source.kind==0 && mx_recall_destination(wire.destination))continue;
         if(r->mode==TS_SOURCE_INHERIT || mx_legacy_direct(*r)) {
             free(s);snprintf(w->status,sizeof(w->status),"UNCHANGED: CONVERT INHERITED / LEGACY SOURCE ROWS IN THE MATRIX FIRST.");return;
         }

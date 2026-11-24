@@ -8,7 +8,7 @@ static int mx_effect_slot(void)
     return -1;
 }
 static int mx_effect_controls(const TsMatrixEffectControls *c)
-{return c->type==TS_MATRIX_FX_MODULATOR?5:(c->type==TS_MATRIX_FX_EQ || c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
+{return c->type==TS_MATRIX_FX_RECALL?0:c->type==TS_MATRIX_FX_MODULATOR?5:(c->type==TS_MATRIX_FX_EQ || c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?3:c->type==TS_MATRIX_FX_COMPRESSOR?7:c->type>=TS_SISTER_FX_GRAIN?6:5;}
 static int mx_effect_control_id(const TsMatrixEffectControls *c,int position)
 {return c->type==TS_MATRIX_FX_MODULATOR?((int[]){3,2,0,1,5})[position]:(c->type==TS_MATRIX_FX_EQ || c->type==TS_MATRIX_FX_SUNVOX || c->type==TS_MATRIX_FX_PEDALBOARD)?position+3:c->type!=TS_MATRIX_FX_COMPRESSOR && c->type<TS_SISTER_FX_GRAIN && position>=2?position+1:position;}
 static float mx_effect_value(const TsMatrixEffectControls *c,int position)
@@ -125,6 +125,10 @@ static void mx_effect_add_patch(SDL_AudioDeviceID device,AudioState *audio,TsUiS
     for(int i=0;i<w->count;++i)if(w->rows[i].kind==4 && w->rows[i].tile==w->effect_open){mx_select(i,0);w->scroll=SDL_max(0,i-MATRIX_VISIBLE+1);}
     w->destination=TS_MATRIX_EFFECT_BASE+slot;mx_reveal_column(type==TS_MATRIX_FX_COMPRESSOR?TS_MATRIX_EFFECT_SC_BASE+slot:w->destination);
     if(type==TS_MATRIX_FX_SUNVOX && !patch)svfx_open(w->effect_open);
+    if(type==TS_MATRIX_FX_RECALL) {
+        snprintf(w->status,sizeof(w->status),"PATCH A TRACK TO HR SEND #%u. SELECT THIS SEND NUMBER IN HOSTILE RECALL.",(unsigned)w->effect_open);
+        return;
+    }
     snprintf(w->status,sizeof(w->status),"ADDED %s #%u. PATCH ITS INPUT COLUMN AND OUTPUT ROW. CTRL+Z TO UNDO.",ts_matrix_effect_name(type),(unsigned)w->effect_open);
 }
 static void mx_effect_add(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,int type)

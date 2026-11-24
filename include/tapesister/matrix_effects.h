@@ -4,7 +4,7 @@
 #include <stdatomic.h>
 
 typedef struct TsMatrixEffectNode TsMatrixEffectNode;
-typedef struct {
+typedef struct TsMatrixEffects {
     TsMatrixEffectNode *current[TS_MATRIX_EFFECT_CAPACITY],*previous[TS_MATRIX_EFFECT_CAPACITY];
     atomic_uint remaining[TS_MATRIX_EFFECT_CAPACITY];
     unsigned total[TS_MATRIX_EFFECT_CAPACITY],fading,rate;
@@ -15,12 +15,19 @@ typedef struct {
     unsigned jobs_count;
     int batching;
     TsSunVoxBatch *worker;
+    unsigned recall_mask;
     unsigned mod_mask,mod_remaining,mod_targets;
     unsigned char mod_order[TS_MATRIX_EFFECT_CAPACITY];unsigned mod_count;
     double mod_quarter;uint32_t transport_serial;
     TsEqSpectrum *eq_spectrum;
     uint32_t eq_spectrum_node,eq_spectrum_child;
 } TsMatrixEffects;
+/* Audio thread records events in connected sends. The controller takes the
+   accumulated peak and count under the normal audio-device exclusion. */
+typedef struct { uint32_t id,hits; float level;uint64_t generation; } TsRecallReading;
+void ts_matrix_recall_note(TsMatrixEffects *,const TsSourceRoute *);
+void ts_matrix_recall_tracker_level(TsMatrixEffects *,const TsSourceRoute *,float);
+TsRecallReading ts_matrix_recall_take(TsMatrixEffects *,int slot);
 /* Publish under audio exclusion. Child zero observes a standalone EQ card. */
 void ts_matrix_effects_observe_eq(TsMatrixEffects *,uint32_t,uint32_t,TsEqSpectrum *);
 typedef struct {TsMatrixEffectNode *node[TS_MATRIX_EFFECT_CAPACITY];struct TsMatrixModulation *modulation[TS_MATRIX_EFFECT_CAPACITY];unsigned changed;TsSunVoxBatch *worker;TsPedalboardPlan board[TS_MATRIX_EFFECT_CAPACITY];} TsMatrixEffectPlan;

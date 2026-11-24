@@ -530,3 +530,11 @@ Opening FX Canvas from Mosaic transfers its selected cards. Returning transfers
 selected cards only when all selected card identities belong to the currently
 active Gallery canvas. A selection spanning movements, or belonging to another
 movement, clears the Mosaic selection without switching movements.
+
+## Hostile Recall Send
+
+Add **Hostile Recall Send** from the effects list. Cable a TrackSister lane to it and set the **TapeSister In** node in Hostile Recall to the send card's number. A visual tap preserves a lane's existing audible route, including an inherited tile route. The card has one input and no output. Its ID is stored in the TapeSister project.
+
+A direct tracker cable supplies a **Hit** on every note start, including a silent note, and **Level** follows signal amplitude and cable gain. A cable from an audio effect supplies its processed level. Give the kick and snare separate send cards to control visuals independently. For example, patch kick Hit to reconstruction, snare Hit to pool advance and snare Level to scatter in Hostile Recall.
+
+The default OSC destination is `127.0.0.1:9011`. To use a separate graphics machine, start Hostile Recall there with `--lan` and set `TAPESISTER_RECALL_HOST` to its numeric IPv4 address before opening TapeSister. Set `TAPESISTER_RECALL_PORT` when using a custom port. The audio thread collects hits and peaks. The interface thread sends them over UDP.

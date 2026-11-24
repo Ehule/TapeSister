@@ -1,3 +1,4 @@
+#include "tapesister/matrix_effects.h"
 #include "tapesister/profile.h"
 /* TapeHead runs as an embedded subsystem. This file is the host boundary;
    editing, undo, selection, timing, effects and transport stay upstream. */
@@ -219,6 +220,17 @@ double ts_tapehead_tile_begin(void *ptr) {
     return ts_audition_loop_begin(v->loopStart,v->sampleEnd,(TsLoopMode)v->tileLoopMode,
                                  &v->tileDirection,&v->tileIntro);
 }
+static _Thread_local TsMatrixEffects *recall_capture;
+int ts_tapehead_recall_lane(unsigned lane)
+{
+    if(!recall_capture || tapeheadPatternContext || lane>=TS_TRACKER_LANES)return 0;
+    unsigned mask=recall_capture->recall_mask;
+    for(unsigned i=0;mask;++i,mask>>=1)
+        if((mask&1) && embed.track_routes[lane].matrix_gain[TS_MATRIX_EFFECT_BASE+i])return 1;
+    return 0;
+}
+void ts_tapehead_recall_level(unsigned lane,float peak)
+{ts_matrix_recall_tracker_level(recall_capture,&embed.track_routes[lane],peak);}
 void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
     voice_t *v=ptr;
     if(!v->tileData || v->sampleEnd<1)return;
@@ -231,6 +243,8 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
         route=ts_source_route_resolve(route,embed.track_routes[v->tileLane]);
     if(!tapeheadPatternContext)ts_source_route_set(&v->tileRouting,route,embed.rate);
     if(!tapeheadPatternContext && (v->tileRouting.mask || v->tileRouting.main!=1 || v->tileRouting.remaining || route.pan || route.width))embed.clean_used=1;
+    int tap=recall_capture && ts_tapehead_recall_lane((unsigned)v->tileLane) && !embed.track_routes[v->tileLane].matrix_enabled;
+    float peak=0;
     for(unsigned i=0;i<count && v->active;++i) {
         TsStereoFrame value;
         if(v->loopType!=LOOP_DISABLED && !v->oneShot) {
@@ -245,6 +259,7 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
            note/global volume, envelopes and ramps (including fade voices). */
         const float center_gain=1.41421356237f;
         value.l*=v->fCurrVolumeL*center_gain;value.r*=v->fCurrVolumeR*center_gain;
+        if(tap)peak=fmaxf(peak,fmaxf(fabsf(value.l),fabsf(value.r)));
         if(!tapeheadPatternContext) {
             embed.clean[offset+i].available=embed.route_available;embed.clean[offset+i].check_outputs=embed.route_check;
             value=ts_source_route_frame(&v->tileRouting,value,&embed.clean[offset+i]);
@@ -262,6 +277,7 @@ void ts_tapehead_mix_tile(void *ptr,unsigned offset,unsigned count) {
         v->position=(int)v->tilePosition;
         v->positionFrac=(uint64_t)((v->tilePosition-floor(v->tilePosition))*4294967296.0);
     }
+    if(tap)ts_tapehead_recall_level((unsigned)v->tileLane,peak);
     if(tapeheadPatternContext)return;
     float source=v->tileRouting.activity_source,send=v->tileRouting.activity_send;
     if(v->tileLane>=0 && v->tileLane<TS_TRACKER_LANES) {
@@ -675,6 +691,21 @@ int ts_tapehead_event(const SDL_Event *event,int x,int y) {
     }
     default:return 0;
     }
+}
+/* Offline pattern instances and editor previews may use the same replayer.
+   Only notes executed by this thread during foreground audio capture are sent. */
+
+void ts_tapehead_recall_note(unsigned lane)
+{
+    if(recall_capture && !tapeheadPatternContext && lane<TS_TRACKER_LANES)
+        ts_matrix_recall_note(recall_capture,&embed.track_routes[lane]);
+}
+const float *ts_tapehead_render_link(unsigned frames,unsigned rate,TsMatrixEffects *effects)
+{
+    recall_capture=effects;
+    const float *out=ts_tapehead_render(frames,rate);
+    recall_capture=NULL;
+    return out;
 }
 const float *ts_tapehead_render(unsigned frames,unsigned rate) {
     if(!atomic_load_explicit(&embed.ready,memory_order_acquire) || frames>TH_FRAMES || rate!=embed.rate)return NULL;

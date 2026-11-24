@@ -137,6 +137,7 @@ int ts_matrix_connect(TsMatrixControls *c,int s,int d,int gain)
 {
     if(!c || s<0 || s>=TS_MATRIX_ROWS || d<0 || d>=TS_MATRIX_DESTINATIONS || gain<0 || gain>2000)return -1;
     int si=ts_matrix_effect_index(s),di=ts_matrix_effect_index(d);
+    if(gain && si>=0 && c->effect[si].type==TS_MATRIX_FX_RECALL)return -1;
     if(gain && ((si>=0 && c->effect[si].type==TS_MATRIX_FX_MODULATOR) || (di>=0 && c->effect[di].type==TS_MATRIX_FX_MODULATOR)))return -1;
     TsMatrixControls next=*c;next.row[s].matrix_gain[d]=gain;
     if(ts_matrix_is_processor(s)) {

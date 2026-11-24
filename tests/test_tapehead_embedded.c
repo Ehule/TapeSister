@@ -498,6 +498,43 @@ static TsStereoFrame settled_output(void) {
     for(int block=0;block<8;++block)audio_callback(test_audio,(Uint8*)out,sizeof(out));
     return (TsStereoFrame){out[1022],out[1023]};
 }
+/* Play two sequenced lanes through the normal output callback. The first is
+   silent, the second keeps its inherited audible output. Both retain their hits. */
+static void hostile_recall_link(void)
+{
+    TsMatrixControls c;
+    ts_matrix_default(&c);c.enabled=1;
+    assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_RECALL)==0);
+    assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_RECALL)==1);
+    assert(ts_matrix_connect(&c,TS_MATRIX_EFFECT_BASE,TS_MATRIX_MAIN,1000)==-1);
+    assert(ts_matrix_effects_restore(&test_audio->sister.matrix_effects,&c,48000));
+    assert(ts_matrix_set(&test_audio->sister.matrix,&c,48000));
+    audit_blank_song(64);
+    uint8_t *raw=test_pages->tracker.embedded_data+52+320+256+7;
+    for(int i=0;i<2;++i) {
+        TsSourceRoute *route=&test_pages->tracker.lanes[i].output_route;
+        *route=(TsSourceRoute){.mode=i?TS_SOURCE_INHERIT:TS_SOURCE_MAIN,.matrix_enabled=!i};
+        route->matrix_gain[TS_MATRIX_EFFECT_BASE+i]=1000;
+        uint8_t *cell=raw+i*7;cell[0]=49;cell[1]=1;cell[2]=i?0x50:0x10;
+    }
+    assert(ts_tapehead_sync(test_pages,test_bank,48000,test_error,sizeof(test_error)));
+    click(390,27);assert(ts_tapehead_running());
+    TsStereoFrame out=settled_output();
+    assert(fabsf(out.l)+fabsf(out.r)>.01f); /* The inherited snare remains audible. */
+    if(SDL_getenv("TS_TEST_RECALL_UDP")) {
+        RecallSender sender={0};
+        sender.last_poll=SDL_GetTicks()-32;
+        recall_send_poll(&sender,0,test_audio);
+        assert(sender.socket);
+        ts_recall_close(sender.socket);
+        return;
+    }
+    TsRecallReading a=ts_matrix_recall_take(&test_audio->sister.matrix_effects,0);
+    TsRecallReading b=ts_matrix_recall_take(&test_audio->sister.matrix_effects,1);
+    assert(a.id!=b.id && a.hits==1 && b.hits==1 && a.level==0 && b.level>.01f);
+    assert(ts_matrix_recall_take(&test_audio->sister.matrix_effects,0).hits==0);
+
+}
 static void tile_level_parity(void) {
     for(unsigned channels=1;channels<=2;++channels) {
         ts_tapehead_stop();
@@ -967,6 +1004,7 @@ int main(int argc,char **argv) {
     if(argc>1 && !strcmp(argv[1],"--appearance")) {test_tracker_appearance(argc>2?argv[2]:NULL);return 0;}
     if(getenv("TS_TEST_TRACKER_REALTIME")) {tracker_realtime();return 0;}
     if(getenv("TS_TEST_MOSAIC_PATTERNS")) {mosaic_patterns();return 0;}
+    if(argc>1 && !strcmp(argv[1],"--hostile-recall")){hostile_recall_link();return 0;}
     tracker_workspace_roundtrips();
     tile_level_parity();
     press(SDLK_z,SDL_SCANCODE_Z,KMOD_NONE);assert(pat()->cells[0][0].note_kind==TS_TRACKER_NOTE_PITCH);

@@ -21,13 +21,14 @@ static void fx_reroute_wires(int destination,SDL_AudioDeviceID device,AudioState
             error="UNCHANGED: SELECT ONLY ONE CABLE PER SOURCE TO MOVE TO A SINGLE INPUT.";
         if(error)break;
         if(fx_control_source(wire.source)>=0){error="CONTROL LINK: CHANGE ITS DESTINATION IN THE MODULATOR EDITOR.";break;}
-        if(!r || (wire.destination!=TS_FX_MOSAIC_BUS && (r->mode==TS_SOURCE_INHERIT || mx_legacy_direct(*r)))) {
+        int visual_pair=wire.source.kind==0 && mx_recall_destination(wire.destination) && mx_recall_destination(destination);
+        if(!r || (!visual_pair && wire.destination!=TS_FX_MOSAIC_BUS && (r->mode==TS_SOURCE_INHERIT || mx_legacy_direct(*r)))) {
             error="UNCHANGED: CONVERT INHERITED / LEGACY SOURCE ROWS IN THE MATRIX FIRST.";break;
         }
         if(wire.destination==destination)continue;
         int inherited=wire.destination==TS_FX_MOSAIC_BUS;
         if(inherited)*r=(TsSourceRoute){.matrix_enabled=1,.pan=r->pan,.width=r->width};
-        else if(wire.source.kind!=2 && wire.source.kind!=4)*r=mx_display_route(*r);
+        else if(!visual_pair && wire.source.kind!=2 && wire.source.kind!=4)*r=mx_display_route(*r);
         int gain=inherited?1000:r->matrix_gain[wire.destination];
         if(!gain){error="UNCHANGED: A SELECTED CABLE NO LONGER EXISTS. RESELECT IT AND TRY AGAIN.";break;}
         if(r->matrix_gain[destination]) {

@@ -1217,7 +1217,7 @@ static unsigned audio_external_effect_roots(const AudioState *a)
         if(banks[b]->voices[i].active)graph|=banks[b]->voices[i].output_route.graph_mask;
     for(int i=0;i<TS_TRACKER_LANES;++i)if(a->tracker.lanes[i].voice.active)graph|=a->tracker.lanes[i].voice.output_route.graph_mask;
     if(a->playing)graph|=a->audition_route.graph_mask;
-    return (unsigned)((graph>>TS_MATRIX_EFFECT_BASE)|(graph>>TS_MATRIX_EFFECT_SC_BASE))&((1u<<TS_MATRIX_EFFECT_CAPACITY)-1);
+    return a->sister.matrix_effects.recall_mask | ((unsigned)((graph>>TS_MATRIX_EFFECT_BASE)|(graph>>TS_MATRIX_EFFECT_SC_BASE))&((1u<<TS_MATRIX_EFFECT_CAPACITY)-1));
 }
 /* The device remains open while stopped. No source/clock/FX state advances;
    recorders receive silence after a short ramp from the last rendered frame. */
@@ -1330,6 +1330,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     double master_source_quarter=0;
     double master_arp_interval=master_controls->enabled?60.0/master_controls->bpm/(1u<<master_controls->arp_division):0;
     int matrix=audio->sister.matrix.controls.enabled;
+    audio->tracker.recall=matrix && audio->sister.matrix_effects.recall_mask?&audio->sister.matrix_effects:NULL;
     const int matrix_tile_audition=matrix && audio->audition_route_tile;
     int matrix_was=atomic_exchange_explicit(&audio->sister.insert.matrix_active,matrix,memory_order_acq_rel);
     if(matrix!=matrix_was && audio->sister.insert.matrix_input)
@@ -1419,7 +1420,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
             fminf(fm_slew, audio->fm_output_target - audio->fm_output_gain));
         uint64_t profile_tracker = ts_profile_begin(TS_PROF_TRACKER);
         if((i/2)%8192==0) {
-            embedded_block=ts_tapehead_render((unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate);
+            embedded_block=ts_tapehead_render_link((unsigned)SDL_min(frames-i/2,8192),(unsigned)audio->output_rate,audio->tracker.recall);
             embedded_clean=embedded_block?ts_tapehead_clean_render():NULL;
         }
         ts_profile_end(TS_PROF_TRACKER, profile_tracker);
@@ -1801,6 +1802,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int bytes)
     ts_master_clock_advance(&audio->sister.master_clock,master_controls,(unsigned)frames-master_span_start,
         (unsigned)audio->output_rate,master_source_quarter);
 audio_block_finish:
+    audio->tracker.recall=NULL;
     /* Final physical output: after routing, spatial decode, fader and safety limiting. */
     ts_audio_range_mask(audio->output_range,out,(unsigned)frames,device_channels);
     if(!audio->engine_stopped && frames>0) {
@@ -14421,6 +14423,8 @@ static int keyboard_note_key_event(const SDL_Event *event, SDL_Window *window,
 #include "main_sdl_live_test.inc"
 #include "main_sdl_offline_engine.inc"
 
+#include "main_sdl_recall_send.inc"
+
 int main(int argc, char **argv)
 {
     int offline_mode=offline_dispatch(argc,argv);
@@ -14996,7 +15000,9 @@ int main(int argc, char **argv)
         fprintf(stderr,"Live test did not arm: %s\n",ui.status);running=0;diagnostic_failed=1;
     }
 #endif
+    RecallSender recall_sender={0};
     while (running) {
+        recall_send_poll(&recall_sender,device,&audio);
         ts_profile_lane_begin(0);
         uint64_t profile_ui = ts_profile_begin(TS_PROF_UI);
         uint64_t profile_control = ts_profile_begin(TS_PROF_CONTROL);
@@ -19318,6 +19324,7 @@ int main(int argc, char **argv)
             (palette_window.visible && window_drawable(palette_window.window)) ||
             window_drawable(spatial_window.window);
         unsigned service_ms = ts_ui_refresh_ms(any_visible, editing, animated);
+        if (recall_sender.socket && service_ms>32u) service_ms=32u;
         if (eq_editor.visible && window_drawable(eq_editor.window) && service_ms>33u) service_ms=33u;
         if (sister_window.model.visible && window_drawable(sister_window.window) && service_ms>33u)
             service_ms=33u;
@@ -19455,6 +19462,7 @@ int main(int argc, char **argv)
     if (texture) SDL_DestroyTexture(texture);
     if (renderer) SDL_DestroyRenderer(renderer);
     if (window) SDL_DestroyWindow(window);
+    ts_recall_close(recall_sender.socket);
     SDL_Quit();
     diagnostic_log("shutdown complete diagnostic_failed=%d", diagnostic_failed);
     return diagnostic_failed ? 2 : 0;
