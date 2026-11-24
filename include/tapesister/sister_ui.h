@@ -335,6 +335,8 @@ typedef struct {
     int preset_confirmation;
     int fx_page;
     int board_count, board_selected, board_tab_first; /* UI navigation only. P1 is the shared board. */
+    uint32_t board_receiving;
+    uint8_t board_pulse;
     int prism_panel, prism_seq_edit, prism_preset_index, prism_preset_count;
     int prism_factory_index; /* Last browsed factory sound; -1 before browsing. */
     int prism_matrix_previous_panel, prism_matrix_edit;
