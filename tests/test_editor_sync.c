@@ -191,6 +191,7 @@ static void eq_window_behavior(void)
     assert(!eq_editor.visible && matrix_window.visible && ui.mosaic_open==mosaic);
     SDL_DestroyWindow(main_window);
 }
+#include "test_effect_eq_spectrum_ui.inc"
 int main(void)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -201,7 +202,7 @@ int main(void)
     ts_sister_runtime_init(&audio.sister);audio.output_rate=48000;audio.output_device_channels=2;
     pages.mosaic=ts_mosaic_create();assert(pages.mosaic);ui.mosaic=pages.mosaic;ui.mosaic_open=1;ts_sister_ui_model_init(&sister.model,&ui.config);sister.model.parameters=audio.sister.parameters;
     mx_bind_mosaic(&ui,&pages);matrix_window.layout=&audio.sister.matrix_layout;
-    board_operations();shared_cards();eq_window_behavior();
+    board_operations();shared_cards();eq_window_behavior();eq_live_spectrum_ui();
     eq_editor_destroy();matrix_close();if(sister.window)SDL_DestroyWindow(sister.window);
     ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_Quit();
     puts("EQ audio/recall, slot operations, shared card styles, cable inheritance and editor windows passed.");return 0;

@@ -1761,6 +1761,15 @@ static TsStereoFrame slot_effect_process(TsSisterPostFxEngine *engine,
     }
 }
 
+void ts_sister_post_fx_observe_eq(TsSisterPostFxEngine *engine,uint32_t id,TsEqSpectrum *spectrum)
+{ engine->eq_spectrum=spectrum;engine->eq_spectrum_id=id; }
+static void observe_eq_location(TsSisterPostFxEngine *engine,size_t slot,size_t location,TsStereoFrame out)
+{
+    if(!engine->eq_spectrum || slot>=(size_t)engine->controls.slot_count)return;
+    const TsSisterFxSlotControls *c=&engine->controls.slot[slot];
+    if(c->id==engine->eq_spectrum_id && c->type==TS_SISTER_FX_EQ && (c->placement&(1u<<location)))
+        ts_eq_spectrum_push(&engine->eq_spectrum[location],out,engine->sample_rate);
+}
 static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
                                       size_t location, TsStereoFrame input,
                                       int explicit_mono, int advance_frame, float send_amount)
@@ -1773,6 +1782,8 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
         return ts_stereo_frame_sanitize_inline(input);
     input = ts_stereo_frame_sanitize_inline(input);
     if (explicit_mono) {
+        if(engine->eq_spectrum)for(int i=0;i<engine->controls.slot_count;++i)
+            observe_eq_location(engine,(size_t)i,location,(TsStereoFrame){input.l,input.l});
         if (advance_frame) {
             uint32_t frames = engine->transition_frames;
             for (size_t slot = 0u; slot < (size_t)engine->processing_slots; ++slot)
@@ -1817,6 +1828,7 @@ static TsStereoFrame process_location(TsSisterPostFxEngine *engine,
             slot_direct += (1-slot_direct)*state->removal.current;
         }
         direct *= slot_direct;
+        if(engine->eq_spectrum)observe_eq_location(engine,slot,location,output);
         if(measured){const TsSisterFxSlotControls *v=&state->active;
             TsProfileEffectIdentity id={.generation=engine->profile_generation,.id=v->id,.type=v->type==TS_SISTER_FX_EQ?TS_MATRIX_FX_EQ:v->type==TS_SISTER_FX_AUTOPAN?TS_MATRIX_FX_AUTOPAN:v->type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->type>=TS_SISTER_FX_FILTER?v->type+1:v->type,.patch=v->sunvox.patch,.quantum=v->type==TS_SISTER_FX_SUNVOX?ts_sunvox_quantum(&v->sunvox):0};
             ts_profile_child_end(0,(unsigned)slot,0,&id,measured,state->has_pending);

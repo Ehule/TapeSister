@@ -30,4 +30,7 @@ void ts_eq_spectrum_push(TsEqSpectrum *s, TsStereoFrame frame, unsigned rate);
 /* UI thread: at most one stereo Hann-windowed FFT, normally called at 10 Hz. */
 int ts_eq_spectrum_poll(TsEqSpectrum *s, TsEqSpectrumView *view,
                         unsigned rate, float elapsed_seconds);
+/* UI only: combine independent placement power, never interleave their audio
+   samples or cancel opposite-phase paths. A single view keeps its level. */
+void ts_eq_spectrum_combine(TsEqSpectrumView *out,const TsEqSpectrumView *views,unsigned count,unsigned rate);
 #endif

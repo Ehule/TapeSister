@@ -19089,7 +19089,7 @@ int main(int argc, char **argv)
         }
         project_refresh_title(window,&ui,&sample_pages,record_bank_active?NULL:&instrument,
             record_bank_active?&instrument:parked_instrument,&audio.sister,&audio.keyboard_sequence,SDL_GetTicks());
-        eq_editor_spectrum(&audio,&ui,!window_minimized,SDL_GetTicks());
+        eq_editor_spectrum(device,&audio,&ui,!window_minimized,SDL_GetTicks());
         if(ui.insert_open)ts_audio_insert_diagnostics(&audio,&ui,0);
         ui.text_cursor_visible = ((SDL_GetTicks() / 500u) & 1u) == 0u;
         sister_window.model.text_cursor_visible = ui.text_cursor_visible;
@@ -19243,6 +19243,7 @@ int main(int argc, char **argv)
             }
         }
         int any_visible = !window_minimized ||
+            (eq_editor.visible && window_drawable(eq_editor.window)) ||
             (offline_ui.visible && window_drawable(offline_ui.window)) ||
             (sister_window.model.visible && window_drawable(sister_window.window)) ||
             ts_audio_health_drawable() ||
@@ -19250,6 +19251,7 @@ int main(int argc, char **argv)
             (palette_window.visible && window_drawable(palette_window.window)) ||
             window_drawable(spatial_window.window);
         unsigned service_ms = ts_ui_refresh_ms(any_visible, editing, animated);
+        if (eq_editor.visible && window_drawable(eq_editor.window) && service_ms>33u) service_ms=33u;
         if (sister_window.model.visible && window_drawable(sister_window.window) && service_ms>33u)
             service_ms=33u;
         if (window_drawable(spatial_window.window) && service_ms>33u) service_ms=33u;

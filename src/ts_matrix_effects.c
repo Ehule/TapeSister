@@ -274,6 +274,10 @@ static void node_transport(TsMatrixEffects *f,TsMatrixEffectNode *n)
     if(n->board)ts_pedalboard_transport(n->board,f->mod_quarter,f->transport_serial);
     if(n->meta)ts_meta_transport(n->meta,f->mod_quarter,f->transport_serial);
 }
+void ts_matrix_effects_observe_eq(TsMatrixEffects *f,uint32_t node,uint32_t child,TsEqSpectrum *spectrum)
+{ f->eq_spectrum=spectrum;f->eq_spectrum_node=node;f->eq_spectrum_child=child; }
+static TsEqSpectrum *node_spectrum(TsMatrixEffects *f,const TsMatrixEffectNode *n)
+{ return n && n->id==f->eq_spectrum_node?f->eq_spectrum:NULL; }
 static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode *n,TsStereoFrame in,TsStereoFrame key,int connected,int transitioning)
 {
     if(!n)return (TsStereoFrame){0,0};
@@ -302,7 +306,8 @@ static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode
     if(n->pedal)return ts_sister_single_fx_process(n->pedal,in,n->gate);
     if(n->meta || n->board){
         TsStereoFrame wet,dry=in;
-        if(n->board)ts_pedalboard_process_aligned(n->board,&in,&wet,&dry,1);else wet=ts_meta_process(n->meta,in);
+        if(n->board)ts_pedalboard_process_observed(n->board,&in,&wet,&dry,1,f->eq_spectrum_child,
+            n==f->current[slot]?node_spectrum(f,n):NULL);else wet=ts_meta_process(n->meta,in);
         float k=n->smooth;n->gain+=(n->gain_target-n->gain)*k;
         n->mix+=(n->mix_target-n->mix)*k;float amount=n->gate*n->mix;
         return ts_stereo_frame_sanitize_inline((TsStereoFrame){dry.l+(wet.l*n->gain-dry.l)*amount,dry.r+(wet.r*n->gain-dry.r)*amount});
@@ -331,6 +336,9 @@ TsStereoFrame ts_matrix_effects_process(TsMatrixEffects *f,int i,TsStereoFrame i
         else ts_profile_end(TS_PROF_MATRIX_FX,started);
     }
     float activity=effect_activity(f,i);if(activity!=1){next.l*=activity;next.r*=activity;}
+    TsMatrixEffectNode *n=f->current[i];
+    if(!f->eq_spectrum_child && n && n->type==TS_MATRIX_FX_EQ && node_spectrum(f,n))
+        ts_eq_spectrum_push(f->eq_spectrum,next,f->rate);
     return next;
 }
 unsigned ts_matrix_effects_span_limit(const TsMatrixEffects *f,unsigned frames)
@@ -386,7 +394,7 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
         }
     } else if(n && n->board && connected) {
         TsStereoFrame dry[TS_MATRIX_DELAY];
-        ts_pedalboard_process_aligned(n->board,in,out,dry,frames);
+        ts_pedalboard_process_observed(n->board,in,out,dry,frames,f->eq_spectrum_child,node_spectrum(f,n));
         for(unsigned j=0;j<frames;++j) {
             if(n->remaining){--n->remaining;n->gate=n->start+(n->target-n->start)*(1-(double)n->remaining/n->total);}
             n->gain+=(n->gain_target-n->gain)*n->smooth;n->mix+=(n->mix_target-n->mix)*n->smooth;
@@ -402,6 +410,8 @@ void ts_matrix_effects_process_span(TsMatrixEffects *f,int i,
         }
         ts_sister_single_fx_process_span(n->pedal,in,gate,out,frames);
     } else for(unsigned j=0;j<frames;++j)out[j]=node_process(f,i,n,in[j],key[j],connected,0);
+    if(!f->eq_spectrum_child && n && n->type==TS_MATRIX_FX_EQ && node_spectrum(f,n))
+        for(unsigned j=0;j<frames;++j)ts_eq_spectrum_push(f->eq_spectrum,out[j],f->rate);
     if(started && n)ts_profile_effect_end(i,&n->profile,started,0);
 }
 void ts_matrix_effects_end_frame(TsMatrixEffects *f)

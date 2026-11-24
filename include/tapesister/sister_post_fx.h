@@ -5,6 +5,7 @@
 #include "tapesister/transient.h"
 #include "tapesister/autopan.h"
 #include "tapesister/master_eq.h"
+#include "tapesister/eq_spectrum.h"
 #include "tapesister/texture_fx.h"
 #include "tapesister/character_filter.h"
 #include "tapesister/sister_effects.h"
@@ -388,7 +389,12 @@ typedef struct {
     TsSisterSunVoxBank *sunvox;
     uint32_t processor_id[TS_SISTER_FX_SLOT_COUNT];
     uint64_t profile_generation;
+    /* UI-selected observer; publish under audio exclusion. Five separate
+       captures preserve sample order when one slot occupies several paths. */
+    TsEqSpectrum *eq_spectrum;
+    uint32_t eq_spectrum_id;
 } TsSisterPostFxEngine;
+void ts_sister_post_fx_observe_eq(TsSisterPostFxEngine *,uint32_t,TsEqSpectrum *);
 
 /* Audio-owner readout of the existing processor state, not new DSP analysis.
    Per type (REVERB..TRANSIENT): wet contribution, wet-weighted A, wet-weighted B.

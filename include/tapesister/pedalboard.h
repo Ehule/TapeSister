@@ -39,6 +39,9 @@ int ts_pedalboard_collect_ready(const TsPedalboard *);
 void ts_pedalboard_finish_edits(TsPedalboard *);
 void ts_pedalboard_profile_owner(TsPedalboard *, unsigned owner, uint32_t board_id);
 void ts_pedalboard_process_aligned(TsPedalboard *, const TsStereoFrame *, TsStereoFrame *, TsStereoFrame *, unsigned);
+/* Optional post-child observation by saved identity; never captures a neighbor
+   or a retiring child after reordering/deletion. Audio output is unchanged. */
+void ts_pedalboard_process_observed(TsPedalboard *,const TsStereoFrame *,TsStereoFrame *,TsStereoFrame *,unsigned,uint32_t,TsEqSpectrum *);
 unsigned ts_pedalboard_latency(const TsPedalboard *);
 /* Shared SunVox host used by canvas boards and the original P1 locations. */
 TsPedalboardSlot *ts_pedalboard_slot_new(const TsSisterFxSlotControls *,unsigned,uint32_t);

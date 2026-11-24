@@ -256,7 +256,7 @@ void ts_pedalboard_transport(TsPedalboard *b,double quarter,uint32_t serial)
 {if(b){b->quarter=quarter;b->transport_serial=serial;}}
 static void slot_transport(TsPedalboard *b,TsPedalboardSlot *s)
 {if(s)ts_sister_single_fx_transport(s->native,b->quarter,b->transport_serial);}
-void ts_pedalboard_process_aligned(TsPedalboard *b,const TsStereoFrame *in,TsStereoFrame *out,TsStereoFrame *dry,unsigned frames)
+void ts_pedalboard_process_observed(TsPedalboard *b,const TsStereoFrame *in,TsStereoFrame *out,TsStereoFrame *dry,unsigned frames,uint32_t child,TsEqSpectrum *spectrum)
 {
     if(!b){memmove(out,in,frames*sizeof(*out));if(dry)memmove(dry,in,frames*sizeof(*dry));return;}
     while(frames) {
@@ -279,6 +279,8 @@ void ts_pedalboard_process_aligned(TsPedalboard *b,const TsStereoFrame *in,TsSte
                 scratch[0]=(TsStereoFrame){old.l+(scratch[0].l-old.l)*t,old.r+(scratch[0].r-old.r)*t};
                 atomic_store(&b->remaining[i],left-1);
             } else {ts_pedalboard_slot_span(b->child[i],scratch,gate,scratch,n);ts_pedalboard_slot_dry(b->child[i],reference,reference,n);}
+            if(spectrum && i<b->controls.count && identity(&b->controls,i)==child && b->controls.slot[i].type==TS_SISTER_FX_EQ)
+                for(unsigned j=0;j<n;++j)ts_eq_spectrum_push(spectrum,scratch[j],b->rate);
             if(measured){TsPedalboardSlot *v=b->child[i]?b->child[i]:b->previous[i];
                 if(v){TsProfileEffectIdentity id={.generation=v->generation,.id=identity(&b->controls,i),.type=v->controls.type==TS_SISTER_FX_EQ?TS_MATRIX_FX_EQ:v->controls.type==TS_SISTER_FX_AUTOPAN?TS_MATRIX_FX_AUTOPAN:v->controls.type==TS_SISTER_FX_SUNVOX?TS_MATRIX_FX_SUNVOX:v->controls.type>=TS_SISTER_FX_FILTER?v->controls.type+1:v->controls.type,.patch=v->controls.sunvox.patch,.quantum=ts_pedalboard_slot_latency(v)};
                     ts_profile_child_end(b->owner,i,b->board_id,&id,measured,left!=0);}
@@ -295,6 +297,8 @@ void ts_pedalboard_process_aligned(TsPedalboard *b,const TsStereoFrame *in,TsSte
         in+=n;out+=n;if(dry)dry+=n;frames-=n;
     }
 }
+void ts_pedalboard_process_aligned(TsPedalboard *b,const TsStereoFrame *in,TsStereoFrame *out,TsStereoFrame *dry,unsigned frames)
+{ ts_pedalboard_process_observed(b,in,out,dry,frames,0,NULL); }
 TsStereoFrame ts_pedalboard_process(TsPedalboard *b,TsStereoFrame in)
 { TsStereoFrame out;ts_pedalboard_process_aligned(b,&in,&out,NULL,1);return out; }
 void ts_pedalboard_process_span(TsPedalboard *b,const TsStereoFrame *in,TsStereoFrame *out,unsigned frames)
