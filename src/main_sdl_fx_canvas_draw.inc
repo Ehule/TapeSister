@@ -248,7 +248,7 @@ static FxPoint fx_flow_position(FxCableCommand c,float t,int straight)
 }
 static int fx_flow_intersects(FxCableCommand c,int straight)
 {
-    if(c.control || c.level<=.0001f || fmaxf(c.y,c.yy)<FX_TOP || fminf(c.y,c.yy)>=FX_BOTTOM)return 0;
+    if(c.control || fmaxf(c.y,c.yy)<FX_TOP || fminf(c.y,c.yy)>=FX_BOTTOM)return 0;
     float bend=straight?0:fx_cable_bend(c.x,c.xx);
     return fmaxf(c.xx,c.x+bend)>=20 && fminf(c.x,c.xx-bend)<fx_right();
 }
@@ -264,11 +264,10 @@ static uint32_t fx_flow_ink(uint32_t cable)
     unsigned light=(54*((cable>>16)&255)+183*((cable>>8)&255)+19*(cable&255))/256;
     return light>=150?cable:fx_blend_ink(cable,0xffffffffu,(150-light)*255/(255-light));
 }
-static void fx_draw_flow_dot(SDL_Rect clip,FxPoint center,float radius,float rim_width,uint32_t ink)
+static void fx_draw_flow_dot(SDL_Rect clip,FxPoint center,float radius,float rim_width,uint32_t ink,uint32_t rim)
 {
     const float support=radius+.5f,inner=radius-rim_width;
     const float full_ink=(inner-.5f)*(inner-.5f),outside=support*support;
-    const uint32_t rim=0xff14161cu;
     int stride=mx_pixel_w();
     int left=SDL_max(clip.x,(int)floorf(center.x-support));
     int right=SDL_min(clip.x+clip.w,(int)ceilf(center.x+support));
@@ -289,27 +288,66 @@ static void fx_draw_flow_dot(SDL_Rect clip,FxPoint center,float radius,float rim
         }
     }
 }
+static void fx_draw_flow_stream(SDL_Rect clip,FxCableCommand cable,int straight,float phase,
+    float spacing,float radius,float density,uint32_t ink,uint32_t rim)
+{
+    enum { CURVE_SEGMENTS=24 };
+    const int segments=straight?1:CURVE_SEGMENTS;
+    FxPoint points[CURVE_SEGMENTS+1];
+    float lengths[CURVE_SEGMENTS+1]={0};
+    points[0]=fx_device_point((FxPoint){cable.x,cable.y});
+    for(int i=1;i<=segments;++i) {
+        points[i]=fx_device_point(fx_flow_position(cable,(float)i/segments,straight));
+        float dx=points[i].x-points[i-1].x,dy=points[i].y-points[i-1].y;
+        lengths[i]=lengths[i-1]+sqrtf(dx*dx+dy*dy);
+    }
+    const float length=lengths[segments];
+    if(length<.01f)return;
+    const float gap=length/fmaxf(1,ceilf(length/spacing));
+    const float offset=fmodf(phase*length,gap);
+    const float margin=radius+2*density;
+    for(int i=1;i<=segments;++i) {
+        FxPoint start=points[i-1],end=points[i],a=start,b=end;
+        float segment=lengths[i]-lengths[i-1];
+        if(segment<=0 || !fx_clip_segment(&a,&b,clip.x-margin,clip.y-margin,
+                clip.x+clip.w+margin,clip.y+clip.h+margin))continue;
+        float dx=end.x-start.x,dy=end.y-start.y;
+        float from=lengths[i-1]+((a.x-start.x)*dx+(a.y-start.y)*dy)/segment;
+        float to=lengths[i-1]+((b.x-start.x)*dx+(b.y-start.y)*dy)/segment;
+        float next=ceilf((fmaxf(from,lengths[i-1])-offset)/gap);
+        for(float at=offset+next*gap;at<lengths[i] && at<=to;at=offset+(++next)*gap) {
+            float t=(i-1+(at-lengths[i-1])/segment)/segments;
+            FxPoint p=fx_device_point(fx_flow_position(cable,t,straight));
+            fx_draw_flow_dot(clip,p,radius,density,ink,rim);
+        }
+    }
+}
 static void fx_flow_dots(SDL_Rect clip,Uint64 now)
 {
-    /* Keep animated work bounded on large patches. Sample across the command
-       list so a dense first bank cannot consume every visible dot. */
-    enum { FX_FLOW_DOT_LIMIT=128 };
     const int straight=matrix_window.layout->canvas_straight;
     const float zoom=matrix_window.layout->canvas_zoom,density=fmaxf(1,fx_stroke.scale);
     const float overview=SDL_clamp((1.2f-zoom)/1.05f,0,1);
-    size_t active=0;
-    for(size_t i=0;i<fx_cable_cache.count;++i)active+=fx_flow_intersects(fx_cable_cache.commands[i],straight);
-    fx_flow_visible=active!=0;
-    size_t step=(active+FX_FLOW_DOT_LIMIT-1)/FX_FLOW_DOT_LIMIT,index=0;
-    if(!step)return;
+    const uint32_t override=matrix_window.layout->canvas_flow_color;
+    size_t visible=0;
+    fx_flow_visible=0;
     for(size_t i=0;i<fx_cable_cache.count;++i) {
         FxCableCommand c=fx_cable_cache.commands[i];
-        if(!fx_flow_intersects(c,straight) || index++%step)continue;
+        if(!fx_flow_intersects(c,straight))continue;
+        ++visible;
+        fx_flow_visible|=c.level>.0001f;
+    }
+    if(!fx_flow_visible)return;
+    /* Widen the spacing on dense patches while keeping a stream on each
+       active cable. Offscreen stretches never generate offscreen dots. */
+    const float spacing=(44+12*overview)*density*sqrtf(fmaxf(1,visible/160.f));
+    const uint32_t rim=override && fx_flow_ink(override)!=override?0xffc5c7cfu:0xff14161cu;
+    for(size_t i=0;i<fx_cable_cache.count;++i) {
+        FxCableCommand c=fx_cable_cache.commands[i];
+        if(c.level<=.0001f || !fx_flow_intersects(c,straight))continue;
         unsigned duration=fx_flow_period(c,zoom);
         float t=(float)((now+i*377)%duration)/duration;
-        FxPoint p=fx_device_point(fx_flow_position(c,t,straight));
-        float radius=(3.4f+3.3f*overview+.4f*fminf(1,c.level*8))*density;
-        fx_draw_flow_dot(clip,p,radius,density,fx_flow_ink(c.flow_color));
+        float radius=(3.4f+3.3f*overview+.4f*fminf(1,c.level*8))*(1.2f-.2f*overview)*density;
+        fx_draw_flow_stream(clip,c,straight,t,spacing,radius,density,override?override:fx_flow_ink(c.flow_color),rim);
     }
 }
 static void fx_cables_begin(void)

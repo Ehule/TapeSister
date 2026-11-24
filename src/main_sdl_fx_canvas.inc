@@ -28,6 +28,8 @@ static struct {
     SDL_Cursor *divider_cursor;int divider_hover,divider_start,divider_pointer;
     int bundles,focus_count;MatrixRow focus_rows[MATRIX_CAPACITY+TS_MATRIX_DESTINATIONS];
     int help;uint32_t group_selected,properties_group;float properties_opacity;
+    int properties_flow_tab,properties_flow_only;
+    uint32_t properties_flow_color;
     uint32_t revealed[TS_MATRIX_EFFECT_CAPACITY];
     int box_add,shift_moved;float gesture_zoom;uint64_t movement;int movement_popup,active_view;
 } fx_canvas={.wire=-1,.destination=-1,.label_selected=-1};

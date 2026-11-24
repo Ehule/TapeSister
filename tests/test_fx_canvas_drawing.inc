@@ -131,12 +131,13 @@ static void cable_drawing(const char *dir)
     w->pixels=saved;w->pixel_w=saved_w;w->pixel_h=saved_h;w->layout->canvas_straight=straight;
     fx_cables_free();assert(fx_stroke_prepare());
     /* Level changes paint over the cached wire, then silence restores it. */
+    w->layout->canvas_straight=1;
     uint32_t *base=malloc((size_t)saved_w*saved_h*sizeof(*base));assert(base);
     mx_rect(0,0,MATRIX_W,MATRIX_H,FX_BG);
-    fx_cables_begin();fx_cables_add(110,200,520,400,FX_CABLE);fx_cables_end();
+    fx_cables_begin();fx_cables_add(110,300,650,300,FX_CABLE);fx_cables_end();
     memcpy(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base));
     const uint32_t signal=0xff28cf8bu;
-    fx_cables_begin();fx_cables_add_signal(110,200,520,400,FX_CABLE,0,.5f,signal);fx_cables_end();
+    fx_cables_begin();fx_cables_add_signal(110,300,650,300,FX_CABLE,0,.5f,signal);fx_cables_end();
     assert(!fx_cable_cache.changed);
     FxCableCommand cable=fx_cable_cache.commands[0],scaled=cable;
     scaled.xx=scaled.x+(scaled.xx-scaled.x)*.2f;
@@ -144,7 +145,7 @@ static void cable_drawing(const char *dir)
     unsigned trip=fx_flow_period(cable,1);
     assert(trip>=4000 && trip==fx_flow_period(scaled,.2f));
     assert(fx_flow_period((FxCableCommand){.xx=15},1)>=4000);
-    FxPoint center=fx_device_point(fx_flow_position(cable,.5f,straight));
+    FxPoint center=fx_device_point(fx_flow_position(cable,.5f,1));
     const size_t size=(size_t)saved_w*saved_h;
     size_t pixels[2]={0};
     float zoom=w->layout->canvas_zoom;
@@ -152,14 +153,37 @@ static void cable_drawing(const char *dir)
         w->layout->canvas_zoom=i?.18f:1.5f;
         fx_flow_dots(fx_cables_area(),fx_flow_period(cable,w->layout->canvas_zoom)/2);
         assert(fx_flow_visible && w->pixels[(size_t)(int)center.y*saved_w+(int)center.x]==signal);
-        for(size_t p=0;p<size;++p)pixels[i]+=w->pixels[p]!=base[p];
+        for(int y=(int)center.y-12;y<=(int)center.y+12;++y)
+            for(int x=(int)center.x-12;x<=(int)center.x+12;++x) {
+                size_t p=(size_t)y*saved_w+x;pixels[i]+=w->pixels[p]!=base[p];
+            }
         memcpy(w->pixels,base,size*sizeof(*base));
     }
     assert(pixels[0]>=20 && pixels[1]>2*pixels[0]);
+    /* A small view into a cable whose endpoints are far offscreen stays
+       populated throughout the cycle. Count distinct dot centers by color. */
+    FxCableCommand long_cable={.x=-7200,.y=300,.xx=11000,.yy=300,.level=.5f};
+    SDL_Rect slice={(int)center.x-64,(int)center.y-12,128,24};
+    uint32_t custom=0xffe85795u;
+    for(int step=0;step<4;++step) {
+        fx_draw_flow_stream(slice,long_cable,1,step*.25f,44,5,1,custom,0xff14161cu);
+        int runs=0,previous=0;
+        const uint32_t *row=w->pixels+(size_t)(int)center.y*saved_w;
+        for(int x=slice.x;x<slice.x+slice.w;++x) {
+            int filled=row[x]==custom;runs+=filled && !previous;previous=filled;
+        }
+        assert(runs>=2 && row[slice.x-1]!=custom && row[slice.x+slice.w]!=custom);
+        memcpy(w->pixels,base,size*sizeof(*base));
+    }
+    w->layout->canvas_flow_color=custom;
+    fx_flow_dots(fx_cables_area(),fx_flow_period(cable,w->layout->canvas_zoom)/2);
+    assert(w->pixels[(size_t)(int)center.y*saved_w+(int)center.x]==custom);
+    w->layout->canvas_flow_color=0;
     w->layout->canvas_zoom=zoom;
-    fx_cables_begin();fx_cables_add(110,200,520,400,FX_CABLE);fx_cables_end();
+    fx_cables_begin();fx_cables_add(110,300,650,300,FX_CABLE);fx_cables_end();
     fx_flow_dots(fx_cables_area(),400);
     assert(!fx_flow_visible && !fx_cable_cache.changed && !memcmp(base,w->pixels,(size_t)saved_w*saved_h*sizeof(*base)));
     free(base);
+    w->layout->canvas_straight=straight;
     puts("Native cable pixels, fractional DPI, bounded curves, clipping, joins and selection passed.");
 }

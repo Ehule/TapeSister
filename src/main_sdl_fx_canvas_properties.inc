@@ -1,10 +1,12 @@
 /* Names and colors are canvas presentation metadata, keyed by stable identity. */
 enum { FX_PROPERTIES_W=560, FX_PROPERTIES_H=326 };
+enum { FX_PROPERTIES_OBJECT, FX_PROPERTIES_CABLES, FX_PROPERTIES_FLOW };
 static TsUiRect fx_properties_action(int action)
 {
     static const int x[]={16,118,448};
     return ts_ui_control_rect(x[action],280,"CANCEL",2,1);
 }
+static const TsUiRect fx_properties_tabs={236,280,192,28};
 static struct {
     SDL_Window *window;SDL_Renderer *renderer;SDL_Texture *texture;Uint32 id;
     uint32_t pixels[FX_PROPERTIES_W*FX_PROPERTIES_H];int dirty,phase;
@@ -49,7 +51,7 @@ static void fx_properties_place(MatrixRow row)
     y=SDL_clamp(y,bounds.y+32,bounds.y+SDL_max(32,bounds.h-FX_PROPERTIES_H-16));
     SDL_SetWindowPosition(fx_properties_window.window,x,y);
 }
-static void fx_properties_begin_targets(MatrixRow row,int cables)
+static void fx_properties_begin_targets(MatrixRow row,int mode)
 {
     if(!fx_properties_window.window) {
         fx_properties_window.window=SDL_CreateWindow("TapeSister - Card Name / Color",
@@ -70,20 +72,23 @@ static void fx_properties_begin_targets(MatrixRow row,int cables)
         fx_properties_window.id=SDL_GetWindowID(fx_properties_window.window);
         fx_properties_place(row);
     }
+    int cables=mode==FX_PROPERTIES_CABLES,flow=mode==FX_PROPERTIES_FLOW;
+    fx_canvas.properties_flow_tab=fx_canvas.properties_flow_only=flow;
+    fx_canvas.properties_flow_color=matrix_window.layout->canvas_flow_color;
     fx_canvas.properties_group=0;fx_canvas.properties_count=0;fx_canvas.properties_wires.count=0;
     if(cables) {
         if(!fx_wire_reserve(&fx_canvas.properties_wires,fx_canvas.wires.count))return;
         memcpy(fx_canvas.properties_wires.items,fx_canvas.wires.items,fx_canvas.wires.count*sizeof(FxCanvasWire));
         fx_canvas.properties_wires.count=fx_canvas.wires.count;
-    } else if(fx_chosen(row) && matrix_window.selection_count>1) {
+    } else if(!flow && fx_chosen(row) && matrix_window.selection_count>1) {
         fx_canvas.properties_count=matrix_window.selection_count;
         memcpy(fx_canvas.properties_rows,matrix_window.selection,fx_canvas.properties_count*sizeof(MatrixRow));
-    } else {fx_canvas.properties_count=1;fx_canvas.properties_rows[0]=row;}
-    TsFxCanvasPosition *p=cables?NULL:fx_position(row,0);fx_canvas.properties_row=row;
+    } else if(!flow) {fx_canvas.properties_count=1;fx_canvas.properties_rows[0]=row;}
+    TsFxCanvasPosition *p=mode==FX_PROPERTIES_OBJECT?fx_position(row,0):NULL;fx_canvas.properties_row=row;
     fx_canvas.properties=1;fx_canvas.properties_all=1;fx_canvas.text_blink=SDL_GetTicks();
     snprintf(fx_canvas.properties_name,sizeof(fx_canvas.properties_name),"%s",p?p->name:"");
     fx_canvas.properties_cursor=(int)strlen(fx_canvas.properties_name);fx_canvas.properties_color=p?p->color:0;
-    TsMosaicEvent *source=!cables && row.kind==3?mx_card(row):NULL;
+    TsMosaicEvent *source=mode==FX_PROPERTIES_OBJECT && row.kind==3?mx_card(row):NULL;
     if(source){snprintf(fx_canvas.properties_name,sizeof(fx_canvas.properties_name),"%s",source->name);fx_canvas.properties_cursor=(int)strlen(fx_canvas.properties_name);fx_canvas.properties_color=source->color;}
     fx_canvas.popup=0;matrix_window.drag=0;matrix_window.dirty=1;fx_properties_window.dirty=1;
     SDL_ShowWindow(fx_properties_window.window);
@@ -96,12 +101,13 @@ static void fx_properties_begin_targets(MatrixRow row,int cables)
         fx_canvas.properties_color=at<0?0:matrix_window.layout->cables[at].color;
     }
 }
-static void fx_properties_begin(MatrixRow row){fx_properties_begin_targets(row,0);}
-static void fx_properties_begin_cables(void){fx_properties_begin_targets(fx_canvas.wires.items[0].source,1);}
+static void fx_properties_begin(MatrixRow row){fx_properties_begin_targets(row,FX_PROPERTIES_OBJECT);}
+static void fx_properties_begin_cables(void){fx_properties_begin_targets(fx_canvas.wires.items[0].source,FX_PROPERTIES_CABLES);}
+static void fx_properties_begin_flow(void){fx_properties_begin_targets((MatrixRow){.kind=-1},FX_PROPERTIES_FLOW);}
 static void fx_properties_begin_group(uint32_t id)
 {
     TsFxCanvasGroup *g=fx_group(id);if(!g)return;
-    fx_properties_begin_targets((MatrixRow){.kind=5,.index=TS_MATRIX_MAIN},0);if(!fx_canvas.properties)return;
+    fx_properties_begin_targets((MatrixRow){.kind=5,.index=TS_MATRIX_MAIN},FX_PROPERTIES_OBJECT);if(!fx_canvas.properties)return;
     fx_clear_selection();fx_clear_wires();fx_canvas.group_selected=id;matrix_window.effect_open=matrix_window.compressor_open=0;
     fx_canvas.properties_group=id;fx_canvas.properties_count=1;fx_canvas.properties_wires.count=0;
     snprintf(fx_canvas.properties_name,sizeof(fx_canvas.properties_name),"%s",g->name);
@@ -110,6 +116,10 @@ static void fx_properties_begin_group(uint32_t id)
 static void fx_properties_save(void)
 {
     TsMatrixLayout *l=matrix_window.layout;
+    if(fx_canvas.properties_flow_tab) {
+        l->canvas_flow_color=fx_canvas.properties_flow_color;
+        fx_properties_close();matrix_window.dirty=1;return;
+    }
     if(fx_canvas.properties_group){TsFxCanvasGroup *g=fx_group(fx_canvas.properties_group);if(g){snprintf(g->name,sizeof(g->name),"%s",fx_canvas.properties_name);g->color=fx_canvas.properties_color?fx_canvas.properties_color:fx_swatch(10);g->opacity=fx_canvas.properties_opacity;}
         fx_properties_close();matrix_window.dirty=1;return;}
     int needed=0;
@@ -136,7 +146,7 @@ static void fx_properties_save(void)
 }
 static void fx_properties_insert(const char *text)
 {
-    if(fx_canvas.properties_count!=1)return;
+    if(fx_canvas.properties_count!=1 || fx_canvas.properties_flow_tab)return;
     char *s=fx_canvas.properties_name;
     if(fx_canvas.properties_all){memset(s,0,sizeof(fx_canvas.properties_name));fx_canvas.properties_cursor=0;fx_canvas.properties_all=0;}
     for(;*text;++text) {
@@ -164,7 +174,7 @@ static int fx_properties_event(SDL_Event *e)
     fx_properties_window.dirty=1;
     if(e->type==SDL_WINDOWEVENT) {
         if(e->window.event==SDL_WINDOWEVENT_CLOSE)fx_properties_close();
-        if(e->window.event==SDL_WINDOWEVENT_FOCUS_GAINED && fx_canvas.properties_count==1)SDL_StartTextInput();
+        if(e->window.event==SDL_WINDOWEVENT_FOCUS_GAINED && fx_canvas.properties_count==1 && !fx_canvas.properties_flow_tab)SDL_StartTextInput();
         return 1;
     }
     /* The global handler normally consumes this first; never Apply on Alt+Enter. */
@@ -175,7 +185,7 @@ static int fx_properties_event(SDL_Event *e)
         char *s=fx_canvas.properties_name;int n=(int)strlen(s),at=fx_canvas.properties_cursor;fx_canvas.text_blink=SDL_GetTicks();
         if(k==SDLK_ESCAPE){fx_properties_close();return 1;}
         if(k==SDLK_RETURN || k==SDLK_KP_ENTER){fx_properties_save();return 1;}
-        if(fx_canvas.properties_count!=1)return 1;
+        if(fx_canvas.properties_count!=1 || fx_canvas.properties_flow_tab)return 1;
         if((mod&KMOD_CTRL) && k==SDLK_a){fx_canvas.properties_all=1;return 1;}
         if((mod&KMOD_CTRL) && k==SDLK_v){char *t=SDL_GetClipboardText();if(t){fx_properties_insert(t);SDL_free(t);}return 1;}
         if(k==SDLK_BACKSPACE || k==SDLK_DELETE) {
@@ -196,7 +206,9 @@ static int fx_properties_event(SDL_Event *e)
     int x=px*FX_PROPERTIES_W/SDL_max(1,width),y=py*FX_PROPERTIES_H/SDL_max(1,height);
     int click=e->type==SDL_MOUSEBUTTONDOWN && e->button.button==SDL_BUTTON_LEFT;
     int drag=e->type==SDL_MOUSEMOTION && (e->motion.state&SDL_BUTTON_LMASK);
-    if(click && fx_canvas.properties_count==1 && x>=16 && x<544 && y>=46 && y<78) {
+    int flow=fx_canvas.properties_flow_tab;
+    uint32_t *color=flow?&fx_canvas.properties_flow_color:&fx_canvas.properties_color;
+    if(click && !flow && fx_canvas.properties_count==1 && x>=16 && x<544 && y>=46 && y<78) {
         int first=SDL_max(0,fx_canvas.properties_cursor-42);
         fx_canvas.properties_cursor=SDL_clamp(first+(x-24+6)/12,0,(int)strlen(fx_canvas.properties_name));
         fx_canvas.properties_all=0;fx_canvas.text_blink=SDL_GetTicks();return 1;
@@ -204,14 +216,26 @@ static int fx_properties_event(SDL_Event *e)
     if(click) {
         if(ts_ui_rect_contains(fx_properties_action(0),x,y)){fx_properties_save();return 1;}
         if(ts_ui_rect_contains(fx_properties_action(1),x,y)){fx_properties_close();return 1;}
-        if(ts_ui_rect_contains(fx_properties_action(2),x,y)){if(fx_canvas.properties_count==1){fx_canvas.properties_name[0]=0;fx_canvas.properties_cursor=0;}fx_canvas.properties_color=0;fx_canvas.properties_opacity=.12f;return 1;}
+        if(ts_ui_rect_contains(fx_properties_action(2),x,y)) {
+            *color=0;
+            if(!flow) {
+                if(fx_canvas.properties_count==1){fx_canvas.properties_name[0]=0;fx_canvas.properties_cursor=0;}
+                fx_canvas.properties_opacity=.12f;
+            }
+            return 1;
+        }
+        if(!fx_canvas.properties_flow_only && ts_ui_rect_contains(fx_properties_tabs,x,y)) {
+            fx_canvas.properties_flow_tab=!flow;
+            if(flow && fx_canvas.properties_count==1)SDL_StartTextInput();else SDL_StopTextInput();
+            return 1;
+        }
     }
-    if(fx_canvas.properties_group && (click || drag) && y>=244 && y<274 && x>=140 && x<=528)fx_canvas.properties_opacity=SDL_clamp((x-140)/388.f,0,1);
-    if(click && x>=16 && x<544 && y>=98 && y<126)fx_canvas.properties_color=fx_swatch((x-16)/33);
+    if(!flow && fx_canvas.properties_group && (click || drag) && y>=244 && y<274 && x>=140 && x<=528)fx_canvas.properties_opacity=SDL_clamp((x-140)/388.f,0,1);
+    if(click && x>=16 && x<544 && y>=98 && y<126)*color=fx_swatch((x-16)/33);
     if((click || drag) && x>=96 && x<=528 && y>=146 && y<242) {
         int component=(y-146)/32,shift=(2-component)*8,value=SDL_clamp((x-96)*255/432,0,255);
-        uint32_t color=fx_canvas.properties_color?fx_canvas.properties_color:fx_swatch(6);
-        fx_canvas.properties_color=(color&~(255u<<shift))|((uint32_t)value<<shift);
+        uint32_t previous=*color?*color:fx_swatch(6);
+        *color=(previous&~(255u<<shift))|((uint32_t)value<<shift);
     }
     return 1;
 }
@@ -242,23 +266,31 @@ static void fx_properties_paint(void)
     if(!fx_properties_window.dirty && phase==fx_properties_window.phase)return;
     fx_properties_window.phase=phase;fx_properties_window.dirty=0;
     fx_properties_rect(0,0,FX_PROPERTIES_W,FX_PROPERTIES_H,FX_PANEL);
-    int named=fx_canvas.properties_count==1;
-    fx_properties_text(16,18,fx_canvas.properties_group?"GROUP NAME / COLOR / OPACITY":named?"NAME / EMPTY USES ORIGINAL":fx_canvas.properties_wires.count?"CABLE COLOR / NAME UNAVAILABLE":"GROUP COLOR / NAMES UNCHANGED",FX_DIM,2,44);
+    int flow=fx_canvas.properties_flow_tab,named=!flow && fx_canvas.properties_count==1;
+    fx_properties_text(16,18,flow?"FLOW COLOR / ALL CABLES":fx_canvas.properties_group?"GROUP NAME / COLOR / OPACITY":named?"NAME / EMPTY USES ORIGINAL":fx_canvas.properties_wires.count?"CABLE COLOR / NAME UNAVAILABLE":"GROUP COLOR / NAMES UNCHANGED",FX_DIM,2,44);
     fx_properties_rect(16,46,528,32,named && fx_canvas.properties_all?FX_EDGE:FX_BG);
     int first=SDL_max(0,fx_canvas.properties_cursor-42);
-    fx_properties_text(24,55,named?fx_canvas.properties_name+first:"NAME UNAVAILABLE",named?FX_TEXT:FX_DIM,2,43);
+    fx_properties_text(24,55,flow?"RESET TO FOLLOW CABLE COLORS":named?fx_canvas.properties_name+first:"NAME UNAVAILABLE",named?FX_TEXT:FX_DIM,2,43);
     if(named && !phase)fx_properties_rect(24+(fx_canvas.properties_cursor-first)*12,52,2,21,FX_FOCUS);
     for(int i=0;i<16;++i)fx_properties_rect(16+i*33,98,31,28,fx_swatch(i));
-    uint32_t color=fx_canvas.properties_color?fx_canvas.properties_color:fx_swatch(6);
+    uint32_t custom=flow?fx_canvas.properties_flow_color:fx_canvas.properties_color;
+    uint32_t color=custom?custom:fx_swatch(6);
     for(int i=0;i<3;++i) {
         char label[16];int v=(color>>((2-i)*8))&255;snprintf(label,sizeof(label),"%c %03d","RGB"[i],v);
         fx_properties_text(16,152+i*32,label,FX_TEXT,2,6);
         fx_properties_rect(96,158+i*32,432,4,FX_EDGE);
         fx_properties_rect(96+v*432/255,150+i*32,3,20,color);
     }
-    if(fx_canvas.properties_group){char label[24];snprintf(label,sizeof(label),"OPACITY %u%%",(unsigned)lroundf(fx_canvas.properties_opacity*100));fx_properties_text(16,250,label,FX_TEXT,1,20);fx_properties_rect(140,258,388,4,FX_EDGE);fx_properties_rect(140+(int)(388*fx_canvas.properties_opacity),249,3,20,color);}
-    else fx_properties_text(16,250,fx_canvas.properties_color?"CUSTOM COLOR":"AUTOMATIC SOURCE / TYPE COLOR",color,2,44);
+    if(flow)fx_properties_text(16,250,custom?"GLOBAL FLOW COLOR":"FOLLOW CABLE COLORS",FX_TEXT,2,44);
+    else if(fx_canvas.properties_group){char label[24];snprintf(label,sizeof(label),"OPACITY %u%%",(unsigned)lroundf(fx_canvas.properties_opacity*100));fx_properties_text(16,250,label,FX_TEXT,1,20);fx_properties_rect(140,258,388,4,FX_EDGE);fx_properties_rect(140+(int)(388*fx_canvas.properties_opacity),249,3,20,color);}
+    else fx_properties_text(16,250,custom?"CUSTOM COLOR":"AUTOMATIC SOURCE / TYPE COLOR",color,2,44);
     fx_properties_button(0,"APPLY");fx_properties_button(1,"CANCEL");fx_properties_button(2,"RESET");
+    if(!fx_canvas.properties_flow_only) {
+        TsUiRect r=fx_properties_tabs;
+        const char *label=flow?"NAME / COLOR":"FLOW COLOR";
+        fx_properties_rect(r.x,r.y,r.w,r.h,FX_EDGE);
+        fx_properties_text(r.x+(r.w-ts_ui_label_width(label,2))/2,r.y+7,label,FX_TEXT,2,16);
+    }
     SDL_UpdateTexture(fx_properties_window.texture,NULL,fx_properties_window.pixels,FX_PROPERTIES_W*sizeof(uint32_t));
     SDL_RenderCopy(fx_properties_window.renderer,fx_properties_window.texture,NULL,NULL);
     SDL_RenderPresent(fx_properties_window.renderer);
