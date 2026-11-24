@@ -145,6 +145,26 @@ static void persistence_and_runtime(void)
     remove("matrix-instance-tile.tsr");remove("matrix-instance-old.tsr");
     remove("matrix-instances.ini");free(state);free(read);ts_sister_runtime_free(&runtime);
 }
+static void stress_recall_sends(void)
+{
+    TsMatrixControls c=empty();
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        assert(ts_matrix_effect_add(&c,TS_MATRIX_FX_RECALL)==i);
+        int port=TS_MATRIX_EFFECT_BASE+i;
+        assert(ts_matrix_connect(&c,TS_MATRIX_NODES,port,100+50*i)==1);
+        assert(ts_matrix_connect(&c,port,TS_MATRIX_MAIN,1000)==-1);
+    }
+    install(&c,48000);
+    for(int f=0;f<1000;++f) {
+        TsStereoFrame output=frame((TsStereoFrame){.5f,-.25f});
+        assert(output.l==0 && output.r==0);
+    }
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        TsRecallReading r=ts_matrix_recall_take(&bank,i);
+        assert(r.id==c.effect[i].id && r.hits==0);
+        close_to(r.level,.5f*(100+50*i)*.001f,1e-5f);
+    }
+}
 static void stress(int type,int parallel)
 {
     TsMatrixControls c=empty();
@@ -175,7 +195,10 @@ int main(void)
     high_ports_and_neutral_stack();independent_keys();lifecycle();persistence_and_runtime();
     /* Control cards have no audio ports. Their assignment graph is exercised
        in test_modulation and the exact Matrix span regression. */
-    for(int type=1;type<TS_MATRIX_FX_TYPES;++type)if(type!=TS_MATRIX_FX_MODULATOR)stress(type,0);
+    for(int type=1;type<TS_MATRIX_FX_TYPES;++type) {
+        if(type==TS_MATRIX_FX_RECALL)stress_recall_sends();
+        else if(type!=TS_MATRIX_FX_MODULATOR)stress(type,0);
+    }
     stress(TS_SISTER_FX_REVERB,1);stress(0,0);ts_matrix_effects_free(&bank);
     puts("Matrix instances: routing, independent keys, lifecycle, long fades, persistence, runtime and pathological DSP passed");return 0;
 }
