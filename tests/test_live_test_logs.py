@@ -33,12 +33,59 @@ def stress_fixture():
         rows.append({"type": "live_test_transition", "t_ms": job * 100 + 9,
                      "detail": f"transition={serial} job={job} stage={stage} from=0 to=0 from_id=42 to_id=42 requested_fade_s=.001 effective_fade_s=.001 dual_frames=48 progress_frames=48 completed=1 retired_reason=completed from_start_s=.009 from_end_s=.01 to_start_s=0 to_end_s=.001"})
     rows.append({"type": "live_test_coverage", "t_ms": 600,
-                 "detail": "planned_transitions=3 observed_transitions=3 completed_transitions=3 interrupted_transitions=0 full_movements_expected=1 full_movements_completed=1 missing_sources=0 trace_overflow=0 coverage_complete=1 workload=content"})
+                 "detail": "planned_transitions=3 observed_transitions=3 completed_transitions=3 interrupted_transitions=0 full_movements_expected=1 full_movements_completed=1 missing_sources=0 trace_overflow=0 coverage_complete=1 workload=content alignment_available=0 alignment_verified=0 alignment_reason=native_section_limits"})
     rows.append({"type": "live_test_complete", "t_ms": 601})
     return sorted(rows, key=lambda row: row["t_ms"])
 
 
 class Comparison(unittest.TestCase):
+    def test_density_alignment_requires_simultaneous_rendered_peaks(self):
+        proof = ("job=6 method=peak_midpoints from=0 to=1 from_id=42 to_id=77 "
+                 "from_point_s=20.05 to_point_s=40.05 from_density_start_s=20 from_density_end_s=20.1 "
+                 "to_density_start_s=40 to_density_end_s=40.1 from_in_s=14.05 from_out_s=22.05 "
+                 "to_in_s=39.05 to_out_s=43.05 from_speed=1 to_speed=.5 fade_s=4 phase_s=2")
+        trace = {"job": "6", "stage": "aligned_overlap", "from": "0", "to": "1",
+                 "from_id": "42", "to_id": "77", "completed": "1", "retired_reason": "completed",
+                 "effective_fade_s": "4", "from_start_s": "18.05", "from_end_s": "22.05",
+                 "to_start_s": "39.05", "to_end_s": "41.05", "progress_frames": "192000",
+                 "common_density_frames": "4800", "density_witness_frame": "96000"}
+        movements = [{"movement": 0, "id": "42", "length_seconds": 60, "inventory": {"speed": "1"}},
+                     {"movement": 1, "id": "77", "length_seconds": 60, "inventory": {"speed": ".5"}}]
+        stages = [{"job": "6", "stage": "aligned_overlap", "complete": True}]
+        summary = {"alignment_available": "1", "alignment_verified": "1", "alignment_reason": "available"}
+        def check(text, traces):
+            rows = [{"type": "live_test_start", "detail": "rate=48000"},
+                    {"type": "live_test_alignment", "detail": text}]
+            return module.density_alignment(rows, stages, movements, traces, summary)
+        result = check(proof, [trace])
+        self.assertTrue(result["verified"], result["problems"])
+        rounded = dict(trace, effective_fade_s="3.99998", from_start_s="18.05002")
+        self.assertTrue(check(proof, [rounded])["verified"])
+        self.assertFalse(check(proof, [dict(trace, effective_fade_s="3.99")])["verified"])
+        self.assertFalse(check(proof, [dict(trace, common_density_frames="0")])["verified"])
+        self.assertFalse(check(proof, [dict(trace, density_witness_frame="0")])["verified"])
+        # Original 12-second outgoing window faded six seconds after its peak.
+        late = dict(trace, from_start_s="26.05", from_end_s="30.05")
+        self.assertIn("density_point_outside_rendered_overlap", check(proof, [late])["problems"])
+        unsynchronized = dict(trace, to_start_s="38.05", to_end_s="40.05")
+        self.assertIn("density_points_not_simultaneous", check(proof, [unsynchronized])["problems"])
+        for changed in (proof.replace("to_speed=.5", "to_speed=1"),
+                        proof.replace("from_id=42", "from_id=99"),
+                        proof.replace("from_point_s=20.05", "from_point_s=nan"),
+                        proof.replace("from_density_end_s=20.1", "from_density_end_s=20.01")):
+            self.assertFalse(check(changed, [trace])["verified"])
+        self.assertFalse(check(proof, [])["verified"])
+        self.assertFalse(check(proof, [trace, trace])["verified"])
+
+    def test_unavailable_density_alignment_is_explicit(self):
+        summary = {"alignment_available": "0", "alignment_verified": "0", "alignment_reason": "native_section_limits"}
+        result = module.density_alignment([], [], [], [], summary)
+        self.assertFalse(result["available"])
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["reason"], "native_section_limits")
+        self.assertEqual(result["problems"], [])
+        self.assertIn("missing_density_alignment_status", module.density_alignment([], [], [], [], {})["problems"])
+
     def test_short_crossfade_coverage_needs_audio_progress_not_windows(self):
         rows = stress_fixture()
         movements = [{"movement": 0, "id": "42", "length_seconds": .01}]

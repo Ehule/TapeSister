@@ -7,6 +7,7 @@ Action order/targets are checked before timing comparisons are described as matc
 import argparse
 from bisect import bisect_right
 import json
+import math
 import re
 import statistics
 import sys
@@ -158,6 +159,86 @@ def stage_usage(run, windows):
     return result
 
 
+def density_alignment(run, stages, movements, transitions, summary):
+    """Verify that both selected density points actually shared a fade phase."""
+    records = [fields(r) for r in run if r.get("type") == "live_test_alignment"]
+    traces = [t for t in transitions if t.get("stage") == "aligned_overlap"]
+    jobs = [s for s in stages if s["stage"] == "aligned_overlap"]
+    available = summary.get("alignment_available")
+    problems = []
+    if available not in ("0", "1") or not summary.get("alignment_reason"):
+        problems.append("missing_density_alignment_status")
+    elif available == "0":
+        if records or traces or jobs or summary.get("alignment_verified") != "0":
+            problems.append("unexpected_density_alignment_evidence")
+    else:
+        if summary.get("alignment_verified") != "1":
+            problems.append("density_alignment_not_verified")
+        if len(records) != 1 or len(traces) != 1 or len(jobs) != 1:
+            problems.append("missing_or_duplicate_density_alignment_evidence")
+        else:
+            proof, trace, stage = records[0], traces[0], jobs[0]
+            inventory = {str(m["movement"]): m for m in movements}
+            try:
+                start = next(fields(r) for r in run if r.get("type") == "live_test_start")
+                rate = float(start["rate"])
+                fade, phase = float(proof["fade_s"]), float(proof["phase_s"])
+                actual_fade = float(trace["effective_fade_s"])
+                if not all(math.isfinite(v) for v in (rate, fade, phase, actual_fade)) or rate <= 0:
+                    raise ValueError("invalid alignment timing")
+                tolerance = 2 / rate + 1e-8  # Two independently rounded source positions.
+                if (not stage["complete"] or proof["job"] != trace["job"] or proof["job"] != stage["job"]
+                        or trace.get("completed") != "1" or trace.get("retired_reason") != "completed"
+                        or not 0 < phase < fade or actual_fade > fade + 1e-8
+                        or fade - actual_fade > 1 / rate + 1e-8):
+                    problems.append("invalid_density_alignment_transition")
+                observed_phases = []
+                density_ranges = []
+                for side in ("from", "to"):
+                    movement = inventory[proof[side]]
+                    if trace[side] != proof[side] or proof[side + "_id"] != trace[side + "_id"] or trace[side + "_id"] != movement["id"]:
+                        problems.append("density_alignment_identity_mismatch")
+                    point, speed, begin, end, dense_begin, dense_end = (
+                        float(proof[side + suffix]) for suffix in
+                        ("_point_s", "_speed", "_in_s", "_out_s", "_density_start_s", "_density_end_s"))
+                    actual_begin, actual_end = float(trace[side + "_start_s"]), float(trace[side + "_end_s"])
+                    if not all(math.isfinite(v) for v in (point, speed, begin, end, dense_begin, dense_end, actual_begin, actual_end)):
+                        raise ValueError("nonfinite alignment proof")
+                    if not .5 <= speed <= 2:
+                        raise ValueError("invalid native movement speed")
+                    source_tolerance = tolerance * speed
+                    if (not 0 <= begin < end <= movement["length_seconds"] + source_tolerance
+                            or not dense_begin <= point < dense_end
+                            or not actual_begin - source_tolerance <= point <= actual_end + source_tolerance
+                            or (end - begin) / speed + tolerance < 2 * fade):
+                        problems.append("density_point_outside_rendered_overlap")
+                    saved_speed = movement.get("inventory", {}).get("speed")
+                    if saved_speed is not None and abs(float(saved_speed) - speed) > 1e-6:
+                        problems.append("density_alignment_speed_mismatch")
+                    actual_phase = (point - actual_begin) / speed
+                    observed_phases.append(actual_phase)
+                    density_ranges.append((actual_begin, speed, dense_begin, dense_end))
+                    if not -tolerance <= actual_phase <= fade + tolerance or abs(actual_phase - phase) > tolerance:
+                        problems.append("density_points_not_simultaneous")
+                if abs(observed_phases[0] - observed_phases[1]) > tolerance:
+                    problems.append("density_points_not_simultaneous")
+                # A nearby geometric phase is insufficient for a sub-sample
+                # burst: require a shared discrete rendered-frame witness.
+                shared = int(trace["common_density_frames"])
+                witness = int(trace["density_witness_frame"])
+                progress = int(trace["progress_frames"])
+                if not 0 < shared <= progress or not 0 <= witness < progress:
+                    problems.append("no_common_rendered_density_sample")
+                elif any(not low <= begin + witness * speed / rate < high
+                         for begin, speed, low, high in density_ranges):
+                    problems.append("density_witness_outside_peak_intervals")
+            except (KeyError, ValueError, StopIteration):
+                problems.append("invalid_density_alignment_proof")
+    return {"available": available == "1", "verified": available == "1" and not problems,
+            "reason": summary.get("alignment_reason", "not_recorded"),
+            "problems": sorted(set(problems)), "evidence": records}
+
+
 def stress_coverage(run, stages, movements):
     """A command succeeding is not evidence that a crossfade rendered audio."""
     summaries = [fields(r) for r in run if r.get("type") == "live_test_coverage"]
@@ -234,8 +315,11 @@ def stress_coverage(run, stages, movements):
                     full.add(movement)
         if full != set(expected_movements):
             problems.append("missing_audio_clock_endpoints")
+    alignment = density_alignment(run, stages, movements, transitions, info)
+    problems.extend(alignment["problems"])
     return {"complete": not problems, "problems": sorted(set(problems)),
             "summary": info, "transitions": transitions,
+            "density_alignment": alignment,
             "note": "Dual-scene progress is counted in the audio renderer, including sub-window fades. Deadline counts belong to stage intervals; silent or externally fed content is not proof of audible output."}
 
 

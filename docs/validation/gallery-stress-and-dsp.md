@@ -75,6 +75,15 @@ event peaks; asynchronous log drains are ordered by event time. Arrival gaps
 remain separate from processing overruns. Neither is presented as a count of
 audible clicks.
 
+The dedicated aligned-overlap stage gives each movement independent section
+endpoints so both selected density peaks occur at a common fade phase. Tests
+cover brief interior bursts, differing saved speeds and boundary-limited
+sections. The reporter rejects a trace whose outgoing peak has already passed,
+whose incoming peak occurs at a different phase, or whose stable IDs/speeds
+disagree. A discrete frame witness must lie inside both recorded density
+intervals, including exact-start and sub-sample boundary cases. Native section
+limits that prevent alignment are reported explicitly.
+
 Closed/open Canvas samples use the same source positions with effects history
 carried between stages. They do not isolate drawing cost from evolving DSP state.
 The full-play stages run with detailed profiling off; the stress stages turn

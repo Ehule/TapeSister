@@ -69,7 +69,17 @@ closed/open samples use the same source positions, but effects history carries
 between stages: hard stop freezes processing rather than recreating each effect.
 These samples describe both viewing conditions; they are not a strict isolated
 test of drawing cost. Dense overlap also exercises a sustained power fade and a
-separate one-millisecond smooth fade. Where the sections are long enough, the
+separate one-millisecond smooth fade. An additional `aligned_overlap` stage
+places the selected peak-density passages at the same phase of a real fade,
+with independent section endpoints that account for both saved speeds and the
+native half-section fade limit. This catches brief bursts that would otherwise
+finish before the outgoing fade begins. The log and report cross-check the
+selected source positions against the rendered transition. If native section
+limits prevent that alignment, `density_alignment` explicitly reports it as
+unavailable; completion of the remaining stages does not certify that missing
+case. A verified alignment also requires a shared rendered frame whose source
+positions lie inside both peak-density intervals; sub-sample bursts cannot pass
+on rounded phase timestamps alone. Where the sections are long enough, the
 test pauses/resumes an active fade, rejects a competing switch, interrupts a
 fade with hard stop, then verifies playback recovery. Short sections explicitly
 report unavailable mid-fade interactions. An all-empty Gallery reports

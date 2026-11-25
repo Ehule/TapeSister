@@ -1,8 +1,8 @@
 /* Mode 4: generated content coverage, followed by adversarial but supported
    transport. All planning, formatting and UI transactions are control-thread
    work. The Gallery's optional trace counts actual rendered overlap samples. */
-enum { LS_FULL,LS_DENSE_CLOSED,LS_DENSE_OPEN,LS_OVERLAP,LS_INTERRUPTED,LS_SHORT,LS_RECOVERY,
-       LS_MAX_JOBS=TS_GALLERY_LIMIT*2+5 };
+enum { LS_FULL,LS_DENSE_CLOSED,LS_DENSE_OPEN,LS_OVERLAP,LS_INTERRUPTED,LS_SHORT,LS_RECOVERY,LS_ALIGNED,
+       LS_MAX_JOBS=TS_GALLERY_LIMIT*2+6 };
 typedef struct {
     TsGallerySequence sequence;
     int stage,movement,profile,transitions,interrupt,interact;
@@ -13,6 +13,10 @@ static struct {
     int jobs_count,current_job,playable,missing_sources,video_only,profile,failed,unsupported_movements,waiting_audio,final_valid;
     int playable_index[TS_GALLERY_LIMIT],full_done[TS_GALLERY_LIMIT];
     double dense_start[TS_GALLERY_LIMIT],dense_end[TS_GALLERY_LIMIT],density[TS_GALLERY_LIMIT];
+    double density_start[TS_GALLERY_LIMIT],density_end[TS_GALLERY_LIMIT],density_point[TS_GALLERY_LIMIT];
+    int alignment_available,alignment_verified,alignment_job,alignment_from,alignment_to;
+    const char *alignment_reason,*alignment_method;
+    double alignment_from_point,alignment_to_point,alignment_phase;
     double saved_fade[TS_GALLERY_LIMIT],speed[TS_GALLERY_LIMIT],schedule_offset;
     int saved_curve[TS_GALLERY_LIMIT],fade_from_sequence[TS_GALLERY_LIMIT];
     unsigned trace_logged,trace_overflow,planned_transitions,observed_transitions;
@@ -25,8 +29,8 @@ static struct {
 static void live_test_profile_interval(int,double);
 static const char *live_stress_name(int stage)
 {
-    static const char *names[]={"full_pass","dense_closed","dense_open","dense_overlap","interrupted_overlap","short_overlap","recovery"};
-    return stage>=0 && stage<=LS_RECOVERY?names[stage]:"idle";
+    static const char *names[]={"full_pass","dense_closed","dense_open","dense_overlap","interrupted_overlap","short_overlap","recovery","aligned_overlap"};
+    return stage>=0 && stage<=LS_ALIGNED?names[stage]:"idle";
 }
 static double live_stress_score(const TsMosaic *m,double at)
 {
@@ -38,6 +42,33 @@ static double live_stress_score(const TsMosaic *m,double at)
         if(at>=e->start && at<e->start+e->duration)score+=e->note_count>0?e->note_count:1;
     }
     return score;
+}
+static int live_stress_boundary_compare(const void *a,const void *b)
+{
+    double x=*(const double *)a,y=*(const double *)b;return (x>y)-(x<y);
+}
+/* Density is constant between source boundaries. Keep the earliest contiguous
+   maximum plateau, including adjoining equal-score intervals, and use its
+   midpoint rather than an onset epsilon. All work is on the control thread. */
+static void live_stress_density(const TsMosaic *m,int p,double end)
+{
+    double boundary[TS_MOSAIC_EVENTS*2+2];int count=0;
+    boundary[count++]=0;boundary[count++]=end;
+    for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id) {
+        const TsMosaicEvent *e=&m->events[i];
+        boundary[count++]=fmin(end,e->start);boundary[count++]=fmin(end,e->start+e->duration);
+    }
+    qsort(boundary,(size_t)count,sizeof(boundary[0]),live_stress_boundary_compare);
+    double best=-1,start=0,stop=0;
+    for(int i=1;i<count;++i) {
+        double a=boundary[i-1],b=boundary[i];if(b<=a)continue;
+        double score=live_stress_score(m,a+(b-a)*.5);
+        if(score>best){best=score;start=a;stop=b;}
+        else if(score==best && a==stop)stop=b;
+    }
+    live_stress.density[p]=fmax(0,best);
+    live_stress.density_start[p]=start;live_stress.density_end[p]=stop;
+    live_stress.density_point[p]=start+(stop-start)*.5;
 }
 static int live_test_stress_scan(const TsSamplePages *pages)
 {
@@ -55,29 +86,19 @@ static int live_test_stress_scan(const TsSamplePages *pages)
                 live_stress.saved_fade[p]=v->fade_seconds;live_stress.saved_curve[p]=v->curve;
                 live_stress.fade_from_sequence[p]=1;break;
             }
-        double point=0,best=-1;int audio=0,video=0;
+        int audio=0,video=0;
         for(int i=0;i<TS_MOSAIC_EVENTS;++i)if(m->events[i].id) {
             const TsMosaicEvent *e=&m->events[i];
             if(!isfinite(e->start) || !isfinite(e->duration) || e->start<0 || e->duration<0 ||
                !isfinite(e->start+e->duration))return 0;
             if(!e->source)++live_stress.missing_sources;
             else if(e->source->video_path[0])++video;else ++audio;
-            /* Concurrency only changes at an event boundary. This score is an
-               explicit structural heuristic, never a measured CPU maximum. */
-            double at=fmin(end,e->start+fmin(e->duration*.5,.000001));
-            double score=live_stress_score(m,at);
-            if(score>best){best=score;point=at;}
         }
-        for(int i=0;i<TS_MOSAIC_MARKERS;++i)if(m->markers[i].stored &&
-            isfinite(m->markers[i].time) && m->markers[i].time>=0 && m->markers[i].time<end) {
-            double score=live_stress_score(m,m->markers[i].time);
-            if(score>best){best=score;point=m->markers[i].time;}
-        }
-        live_stress.density[p]=fmax(0,best);
+        live_stress_density(m,p,end);
         if(video && !audio)++live_stress.video_only;
         if(end>=.001) {
             live_stress.playable_index[live_stress.playable++]=p;
-            double span=fmin(end,12*m->speed),start=fmax(0,point-2*m->speed);
+            double span=fmin(end,12*m->speed),start=fmax(0,live_stress.density_point[p]-2*m->speed);
             if(start+span>end)start=fmax(0,end-span);
             live_stress.dense_start[p]=start;live_stress.dense_end[p]=fmin(end,start+span);
         } else if(end>0)++live_stress.unsupported_movements;
@@ -117,6 +138,58 @@ static void live_stress_measure(LiveStressJob *j)
     }
     j->seconds=total;
 }
+static void live_stress_aligned_plan(int from,int to)
+{
+    double sa=live_stress.speed[from],sb=live_stress.speed[to];
+    double a=live_stress.dense_start[from],b=live_stress.dense_end[from];
+    double c=live_stress.dense_start[to],d=live_stress.dense_end[to];
+    double fade=fmin(4,fmin((b-a)/sa,(d-c)/sb)*.5);
+    double low=fmax(0,fmax((live_stress.density_start[from]-(b-fade*sa))/sa,
+                          (live_stress.density_start[to]-c)/sb));
+    double high=fmin(fade,fmin((live_stress.density_end[from]-(b-fade*sa))/sa,
+                              (live_stress.density_end[to]-c)/sb));
+    double phase=0,pa=live_stress.density_point[from],pb=live_stress.density_point[to];
+    const char *method="existing_density_overlap";
+    live_stress.alignment_reason="native_section_limits";
+    /* A common interval is stronger than separately finding a peak on each
+       side. It also keeps a flat 1ms scene eligible despite section limits. */
+    if(high>low && b>=a+.001 && d>=c+.001) {
+        phase=low+(high-low)*.5;pa=b-fade*sa+phase*sa;pb=c+phase*sb;
+    } else {
+        method="peak_midpoints";
+        double qa=pa/sa,ra=(live_test.movement_end[from]-pa)/sa;
+        double qb=pb/sb,rb=(live_test.movement_end[to]-pb)/sb;
+        /* Each native section must last >=2F. These bounds are the intersection
+           of their legal common peak phases, including both timeline edges. */
+        fade=fmin(4,fmin(fmin(qa,rb),fmin(fmin((qa+ra)*.5,(qb+rb)*.5),fmin(ra+qb,(qa+rb)/3))));
+        for(int attempt=0;attempt<2;++attempt) {
+            low=fmax(0,fmax(fade-ra,2*fade-rb));high=fmin(fade,fmin(qb,qa-fade));
+            if(!(fade>0) || low>high+1e-10)return;
+            phase=fmax(low,fmin(fade*.5,high));
+            if(phase>0 && phase<fade)break;
+            /* Keep both peak points inside the fade, not at an entry/retire
+               boundary whose endpoint can fall between rendered samples. */
+            fade*=.99;
+        }
+        if(!(phase>0 && phase<fade))return;
+        a=fmax(0,pa-(fade+phase)*sa);b=fmin(live_test.movement_end[from],pa+(fade-phase)*sa);
+        c=fmax(0,pb-phase*sb);d=fmin(live_test.movement_end[to],pb+(2*fade-phase)*sb);
+        if(b<a+.001 || d<c+.001)return;
+    }
+    LiveStressJob *j=live_stress_job(LS_ALIGNED,from);if(!j)return;
+    live_stress_step(&j->sequence,from,a,b,fade,1,TS_GALLERY_FADE_POWER);
+    live_stress_step(&j->sequence,to,c,d,0,1,0);live_stress_measure(j);
+    double actual_phase=(pa-(b-j->fade*sa))/sa,incoming_phase=(pb-c)/sb;
+    if(!(j->fade>0 && actual_phase>=-1e-10 && actual_phase<j->fade &&
+         incoming_phase>=-1e-10 && incoming_phase<j->fade && fabs(actual_phase-incoming_phase)<1e-8)) {
+        --live_stress.jobs_count;return;
+    }
+    live_stress.alignment_available=1;live_stress.alignment_job=live_stress.jobs_count-1;
+    live_stress.alignment_from=from;live_stress.alignment_to=to;
+    live_stress.alignment_from_point=pa;live_stress.alignment_to_point=pb;
+    live_stress.alignment_phase=fmax(0,actual_phase);
+    live_stress.alignment_method=method;live_stress.alignment_reason="available";
+}
 static void live_stress_add(uint64_t ms,int action,int target,float value)
 {
     if(ms>UINT32_MAX){live_test.plan_failed=1;return;}
@@ -124,6 +197,7 @@ static void live_stress_add(uint64_t ms,int action,int target,float value)
 }
 static void live_test_stress_plan(void)
 {
+    live_stress.alignment_job=-1;live_stress.alignment_reason="no_playback_workload";
     live_test.count=0;live_test_add(0,LT_CHECK,0,0);live_test_add(100,LT_BACKSPACE,0,0);
     live_test_add(8000,LT_ASSERT,2,0);uint64_t t=8100;
     for(int p=0;p<live_test.movements;++p){live_stress_add(t,LT_INVENTORY,p,0);t+=100;}
@@ -152,6 +226,7 @@ static void live_test_stress_plan(void)
             other=live_stress.playable_index[0]==heavy?live_stress.playable_index[1]:live_stress.playable_index[0];
             for(int n=0;n<live_stress.playable;++n){int p=live_stress.playable_index[n];if(p!=heavy && live_stress.density[p]>live_stress.density[other])other=p;}
         }
+        live_stress_aligned_plan(heavy,other);
         for(int interrupted=0;interrupted<2;++interrupted) {
             LiveStressJob *j=live_stress_job(interrupted?LS_INTERRUPTED:LS_OVERLAP,heavy);if(!j)return;
             live_stress_step(&j->sequence,heavy,live_stress.dense_start[heavy],live_stress.dense_end[heavy],4,1,TS_GALLERY_FADE_POWER);
@@ -197,16 +272,32 @@ static void live_test_stress_plan(void)
 }
 static void live_test_stress_log_plan(const TsSamplePages *pages)
 {
-    ts_session_log_event("live_test_plan","scenario=gallery-stress-v1 testorder=generated jobs=%d playable_movements=%d missing_sources=%d video_only_movements=%d planned_transitions=%u duration_ms=%u density_metric=overlapping_note_slots full_pass_profile=0 stress_profile=1 midfade_interactions=%s trace_capacity=%d",
+    ts_session_log_event("live_test_plan","scenario=gallery-stress-v1 testorder=generated jobs=%d playable_movements=%d missing_sources=%d video_only_movements=%d planned_transitions=%u duration_ms=%u density_metric=overlapping_note_slots full_pass_profile=0 stress_profile=1 midfade_interactions=%s trace_capacity=%d alignment_available=%d alignment_reason=%s",
         live_stress.jobs_count,live_stress.playable,live_stress.missing_sources,live_stress.video_only,
-        live_stress.planned_transitions,live_test.duration_ms,live_stress.midfade_available?"available":"unavailable_short_sections",TS_GALLERY_DIAGNOSTIC_TRANSITIONS);
+        live_stress.planned_transitions,live_test.duration_ms,live_stress.midfade_available?"available":"unavailable_short_sections",TS_GALLERY_DIAGNOSTIC_TRANSITIONS,
+        live_stress.alignment_available,live_stress.alignment_reason);
     for(int p=0;p<live_test.movements;++p)ts_session_log_event("live_test_content_plan",
-        "movement=%d id=%llu speed=%.6f end_s=%.9f dense_start_s=%.9f dense_end_s=%.9f density=%.3f saved_fade_s=%.6f full_requested_fade_s=%.6f fade_source=%s fade_override=%d coverage=%s",
+        "movement=%d id=%llu speed=%.6f end_s=%.9f dense_start_s=%.9f dense_end_s=%.9f density=%.3f density_start_s=%.17g density_end_s=%.17g density_point_s=%.17g saved_fade_s=%.6f full_requested_fade_s=%.6f fade_source=%s fade_override=%d coverage=%s",
         p,(unsigned long long)pages->gallery->canvas[p].id,live_stress.speed[p],live_test.movement_end[p],
-        live_stress.dense_start[p],live_stress.dense_end[p],live_stress.density[p],live_stress.saved_fade[p],
+        live_stress.dense_start[p],live_stress.dense_end[p],live_stress.density[p],
+        live_stress.density_start[p],live_stress.density_end[p],live_stress.density_point[p],live_stress.saved_fade[p],
         live_stress.saved_fade[p]>0?live_stress.saved_fade[p]:2,
         live_stress.fade_from_sequence[p]?"first_saved_sequence_visit":"gallery",live_stress.saved_fade[p]==0,
         live_test.movement_end[p]>=.001?"full_and_stress":"skipped_empty_or_submillisecond");
+}
+static void live_stress_alignment_log(const AudioState *a)
+{
+    const LiveStressJob *j=&live_stress.jobs[live_stress.alignment_job];
+    int p=live_stress.alignment_from,q=live_stress.alignment_to;
+    const TsGalleryStep *from=&j->sequence.step[0],*to=&j->sequence.step[1];
+    ts_session_log_event("live_test_alignment",
+        "job=%d method=%s from=%d to=%d from_id=%llu to_id=%llu from_point_s=%.17g to_point_s=%.17g from_density_start_s=%.17g from_density_end_s=%.17g to_density_start_s=%.17g to_density_end_s=%.17g from_in_s=%.17g from_out_s=%.17g to_in_s=%.17g to_out_s=%.17g from_speed=%.17g to_speed=%.17g fade_s=%.17g phase_s=%.17g",
+        live_stress.alignment_job,live_stress.alignment_method,p,q,
+        (unsigned long long)a->gallery->canvas[p].id,(unsigned long long)a->gallery->canvas[q].id,
+        live_stress.alignment_from_point,live_stress.alignment_to_point,
+        live_stress.density_start[p],live_stress.density_end[p],live_stress.density_start[q],live_stress.density_end[q],
+        from->in_seconds,from->out_seconds,to->in_seconds,to->out_seconds,
+        live_stress.speed[p],live_stress.speed[q],j->fade,live_stress.alignment_phase);
 }
 static void live_stress_stage_log(AudioState *a,const LiveStressJob *j,const char *state)
 {
@@ -218,9 +309,45 @@ static void live_stress_stage_log(AudioState *a,const LiveStressJob *j,const cha
         (unsigned long long)s.deadline_overruns,(unsigned long long)s.near_overruns,
         (unsigned long long)s.delayed_starts,j->seconds);
 }
+static int live_stress_density_frame(const TsGalleryDiagnosticTransition *d,int rate,uint64_t k)
+{
+    if(k>=d->progress_frames)return 0;
+    int p=live_stress.alignment_from,q=live_stress.alignment_to;
+    double from=d->from_start+(double)k*live_stress.speed[p]/rate;
+    double to=d->to_start+(double)k*live_stress.speed[q]/rate;
+    return from>=live_stress.density_start[p] && from<live_stress.density_end[p] &&
+        to>=live_stress.density_start[q] && to<live_stress.density_end[q];
+}
+/* Aligned jobs have constant native speed and no pauses. Frame k renders at
+   trace.start + k*speed/rate on each side. Count their common density interval
+   on that discrete grid; a phase tolerance alone cannot prove sub-frame peaks.
+   Correct ceil roundoff with bounded checks of actual source positions. Exact
+   inclusive-start samples remain valid. All work stays on the UI thread. */
+static uint64_t live_stress_common_density_frames(const TsGalleryDiagnosticTransition *d,int rate,uint64_t *witness)
+{
+    *witness=UINT64_MAX;
+    if(rate<=0 || !d->progress_frames)return 0;
+    int p=live_stress.alignment_from,q=live_stress.alignment_to;
+    double sa=live_stress.speed[p],sb=live_stress.speed[q];
+    double low=fmax((live_stress.density_start[p]-d->from_start)*rate/sa,
+                    (live_stress.density_start[q]-d->to_start)*rate/sb);
+    double high=fmin((live_stress.density_end[p]-d->from_start)*rate/sa,
+                     (live_stress.density_end[q]-d->to_start)*rate/sb);
+    uint64_t frames=d->progress_frames;
+    uint64_t first=(uint64_t)fmin((double)frames,fmax(0,ceil(low)));
+    uint64_t end=(uint64_t)fmin((double)frames,fmax(0,ceil(high)));
+    for(int i=0;i<2 && first>0 && live_stress_density_frame(d,rate,first-1);++i)--first;
+    for(int i=0;i<2 && first<frames && !live_stress_density_frame(d,rate,first);++i)++first;
+    for(int i=0;i<2 && end<frames && live_stress_density_frame(d,rate,end);++i)++end;
+    for(int i=0;i<2 && end>first && !live_stress_density_frame(d,rate,end-1);++i)--end;
+    if(end<=first || !live_stress_density_frame(d,rate,first) || !live_stress_density_frame(d,rate,end-1))return 0;
+    uint64_t k=first+(end-first)/2;
+    if(!live_stress_density_frame(d,rate,k))return 0;
+    *witness=k;return end-first;
+}
 static int live_test_stress_observe(SDL_AudioDeviceID device,AudioState *a,TsSamplePages *pages)
 {
-    (void)a;TsMosaicGallery *g=pages->gallery;if(!g)return 0;
+    TsMosaicGallery *g=pages->gallery;if(!g)return 0;
     /* Bound UI logging too: even a pathological burst must not turn one poll
        into a second telemetry overflow. Any undrained records remain queued. */
     TsGalleryDiagnosticTransition ready[8];unsigned count=0;
@@ -232,18 +359,36 @@ static int live_test_stress_observe(SDL_AudioDeviceID device,AudioState *a,TsSam
     const LiveStressJob *j=live_stress.current_job>=0?&live_stress.jobs[live_stress.current_job]:NULL;
     for(unsigned i=0;i<count;++i) {
         const TsGalleryDiagnosticTransition *d=&ready[i];
+        uint64_t common_density_frames=0,density_witness_frame=UINT64_MAX;
         ++live_stress.observed_transitions;++live_stress.job_observed;
         if(d->completed){++live_stress.completed_transitions;++live_stress.job_completed;}
         else ++live_stress.interrupted_transitions;
         if(!d->dual_frames || !d->progress_frames)live_stress.failed=1;
         if(j && j->stage==LS_FULL && d->completed && d->from>=0 && d->from<live_test.movements &&
             d->from_end+1e-5>=live_test.movement_end[d->from])live_stress.full_done[d->from]=1;
+        if(j && j->stage==LS_ALIGNED) {
+            int p=live_stress.alignment_from,q=live_stress.alignment_to;
+            double sa=live_stress.speed[p],sb=live_stress.speed[q];
+            double pa=live_stress.alignment_from_point,pb=live_stress.alignment_to_point;
+            double tolerance=a->output_rate>0?1.0/a->output_rate+1e-9:0;
+            double phase_a=(pa-d->from_start)/sa,phase_b=(pb-d->to_start)/sb;
+            common_density_frames=live_stress_common_density_frames(d,a->output_rate,&density_witness_frame);
+            int ok=a->output_rate>0 && d->completed && d->from==p && d->to==q &&
+                d->from_id==g->canvas[p].id && d->to_id==g->canvas[q].id &&
+                d->effective_fade<=j->fade+1e-8 && d->effective_fade+tolerance>=j->fade &&
+                phase_a>=-tolerance && phase_b>=-tolerance &&
+                pa<=d->from_end+sa*tolerance && pb<=d->to_end+sb*tolerance &&
+                fabs(phase_a-phase_b)<=tolerance && fabs(phase_a-live_stress.alignment_phase)<=tolerance && common_density_frames>0;
+            live_stress.alignment_verified=ok;
+            if(!ok){live_stress.failed=1;live_stress.alignment_reason=common_density_frames?"rendered_alignment_mismatch":"no_common_density_sample";}
+        }
         ts_session_log_event("live_test_transition",
-            "transition=%llu job=%d stage=%s from=%d to=%d from_id=%llu to_id=%llu requested_fade_s=%.9f effective_fade_s=%.9f dual_frames=%llu progress_frames=%llu completed=%d retired_reason=%s from_start_s=%.9f from_end_s=%.9f to_start_s=%.9f to_end_s=%.9f",
+            "transition=%llu job=%d stage=%s from=%d to=%d from_id=%llu to_id=%llu requested_fade_s=%.17g effective_fade_s=%.17g dual_frames=%llu progress_frames=%llu completed=%d retired_reason=%s from_start_s=%.17g from_end_s=%.17g to_start_s=%.17g to_end_s=%.17g common_density_frames=%llu density_witness_frame=%lld",
             (unsigned long long)d->serial,live_stress.current_job,j?live_stress_name(j->stage):"idle",d->from,d->to,
             (unsigned long long)d->from_id,(unsigned long long)d->to_id,d->requested_fade,d->effective_fade,
             (unsigned long long)d->dual_frames,(unsigned long long)d->progress_frames,d->completed,
-            d->completed?"completed":"interrupted",d->from_start,d->from_end,d->to_start,d->to_end);
+            d->completed?"completed":"interrupted",d->from_start,d->from_end,d->to_start,d->to_end,(unsigned long long)common_density_frames,
+            density_witness_frame==UINT64_MAX?-1:(long long)density_witness_frame);
     }
     TsSessionLogStatus log;ts_session_log_status(&log);
     if(log.state!=TS_SESSION_RECORDING || log.dropped_audio!=live_test.dropped_audio || log.dropped_events!=live_test.dropped_events)live_stress.failed=1;
@@ -279,6 +424,7 @@ static int live_test_stress_action(const LiveTestStep *s,SDL_Window *window,SDL_
         if(device)SDL_UnlockAudioDevice(device);
         ts_realtime_diagnostics_get(&a->realtime_diagnostics,&live_stress.stage_initial);
         live_stress_stage_log(a,j,"begin");
+        if(j->stage==LS_ALIGNED)live_stress_alignment_log(a);
         return gallery_sequence_start(device,a,ui,bank,mosaic,0);
     }
     if(s->action==LT_STRESS_WAIT) {
@@ -344,17 +490,19 @@ static int live_test_stress_coverage(SDL_AudioDeviceID device,AudioState *a,int 
     int complete=requested_complete && live_stress.playable && !live_stress.unsupported_movements &&
         !live_stress.failed && !live_stress.trace_overflow && !live_stress.missing_sources &&
         full==live_stress.playable && live_stress.observed_transitions==live_stress.planned_transitions &&
+        (!live_stress.alignment_available || live_stress.alignment_verified) &&
         (!live_stress.playable || live_stress.recovery_verified) &&
         (!live_stress.midfade_available || (live_stress.pause_verified && live_stress.busy_verified && live_stress.stop_verified));
     if(device)SDL_LockAudioDevice(device);
     if(a->gallery)a->gallery->diagnostic_enabled=0;
     if(device)SDL_UnlockAudioDevice(device);
     ts_session_log_event("live_test_coverage",
-        "planned_transitions=%u observed_transitions=%u completed_transitions=%u interrupted_transitions=%u full_movements_expected=%d full_movements_completed=%d playable_movements=%d unsupported_movements=%d workload=%s missing_sources=%d trace_overflow=%u coverage_complete=%d midfade_available=%d pause_verified=%d busy_verified=%d stop_verified=%d recovery_verified=%d callbacks=%llu over_budget=%llu near_budget=%llu start_gaps=%llu",
+        "planned_transitions=%u observed_transitions=%u completed_transitions=%u interrupted_transitions=%u full_movements_expected=%d full_movements_completed=%d playable_movements=%d unsupported_movements=%d workload=%s missing_sources=%d trace_overflow=%u coverage_complete=%d midfade_available=%d pause_verified=%d busy_verified=%d stop_verified=%d recovery_verified=%d alignment_available=%d alignment_verified=%d alignment_reason=%s callbacks=%llu over_budget=%llu near_budget=%llu start_gaps=%llu",
         live_stress.planned_transitions,live_stress.observed_transitions,live_stress.completed_transitions,live_stress.interrupted_transitions,
         live_stress.playable,full,live_stress.playable,live_stress.unsupported_movements,
         live_stress.playable?"content":"no_playback_workload",live_stress.missing_sources,live_stress.trace_overflow,complete,
         live_stress.midfade_available,live_stress.pause_verified,live_stress.busy_verified,live_stress.stop_verified,live_stress.recovery_verified,
+        live_stress.alignment_available,live_stress.alignment_verified,live_stress.alignment_reason,
         (unsigned long long)(s.callback_count-live_stress.initial.callback_count),(unsigned long long)live_stress.over_budget,
         (unsigned long long)(s.near_overruns-live_stress.initial.near_overruns),
         (unsigned long long)(s.delayed_starts-live_stress.initial.delayed_starts));
