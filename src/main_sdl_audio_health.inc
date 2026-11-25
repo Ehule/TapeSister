@@ -1,6 +1,56 @@
 /* Modeless, low-refresh-rate audio health window. All formatting, drawing and
    clipboard operations stay on the UI thread; the reader never locks audio. */
 typedef struct {
+    int32_t matrix_gain[TS_MATRIX_DESTINATIONS], pan;
+} TsAudioHealthMatrixRow;
+typedef struct {
+    uint64_t sunvox_patch;
+    uint32_t id;
+    int type, enabled;
+    float mix;
+    unsigned sunvox_quantum;
+} TsAudioHealthMatrixEffect;
+/* A report needs routing and effect identities, not every processor's saved
+   controls. In particular, copying the full Matrix also copied all embedded
+   pedalboards and Meta settings while the UI excluded the audio callback. */
+typedef struct {
+    int enabled, main_clip, board_insert;
+    TsAudioHealthMatrixRow row[TS_MATRIX_ROWS];
+    uint64_t delayed[TS_MATRIX_ROWS];
+    TsAudioHealthMatrixEffect effect[TS_MATRIX_EFFECT_CAPACITY];
+    char input_name[TS_MATRIX_INPUTS][TS_MATRIX_NAME];
+    char output_name[TS_MATRIX_OUTPUTS][TS_MATRIX_NAME];
+} TsAudioHealthMatrix;
+
+static void ts_audio_health_capture_matrix(TsAudioHealthMatrix *to,
+                                          const TsMatrixControls *from)
+{
+    /* Session snapshots use byte equality. Canonical padding and omitted
+       fields prevent unrelated DSP controls from producing duplicate reports. */
+    memset(to,0,sizeof(*to));
+    to->enabled=from->enabled;
+    to->main_clip=ts_matrix_main_clip(from);
+    to->board_insert=from->board_insert || (from->serial_mask&(1u<<TS_MATRIX_BOARD));
+    for(int i=0;i<TS_MATRIX_ROWS;++i) {
+        memcpy(to->row[i].matrix_gain,from->row[i].matrix_gain,sizeof(to->row[i].matrix_gain));
+        to->row[i].pan=from->row[i].pan;
+    }
+    memcpy(to->delayed,from->delayed,sizeof(to->delayed));
+    memcpy(to->input_name,from->input_name,sizeof(to->input_name));
+    memcpy(to->output_name,from->output_name,sizeof(to->output_name));
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        const TsMatrixEffectControls *fx=&from->effect[i];
+        TsAudioHealthMatrixEffect *snapshot=&to->effect[i];
+        snapshot->id=fx->id;snapshot->type=fx->type;
+        snapshot->enabled=fx->enabled;snapshot->mix=fx->mix;
+        if(fx->type==TS_MATRIX_FX_SUNVOX) {
+            snapshot->sunvox_patch=fx->sunvox.patch;
+            snapshot->sunvox_quantum=ts_sunvox_quantum(&fx->sunvox);
+        }
+    }
+}
+
+typedef struct {
     int valid;
     Uint32 captured;
     int hold, keyboard_voices, held_voices, tile_voices;
@@ -19,7 +69,7 @@ typedef struct {
     int prism, prism_mode, prism_lenses, prism_sequence, prism_matrix;
     int send_assigned, send_available, return_available, router_sequence;
     TsRouterControls router;
-    TsMatrixControls matrix;
+    TsAudioHealthMatrix matrix;
     float router_wet[TS_ROUTER_COUNT];
 } TsAudioHealthSetup;
 
@@ -135,7 +185,8 @@ static void ts_audio_health_capture_setup(const AudioState *audio,
     s->send_assigned = r->insert.controls.send_pair > 0;
     s->send_available = ts_insert_send_available(&r->insert);
     s->return_available = ts_insert_return_available(&r->insert);
-    s->router = r->router.controls;s->matrix=r->matrix.controls;
+    s->router = r->router.controls;
+    ts_audio_health_capture_matrix(&s->matrix,&r->matrix.controls);
     memcpy(s->router.order, r->router.order, sizeof(s->router.order));
     memcpy(s->router_wet, r->router.wet, sizeof(s->router_wet));
     s->router_sequence = r->router.transport.running;
@@ -158,12 +209,12 @@ static const char *health_route(const TsAudioHealthSetup *s, int stage)
     return active ? "routed" : "bypassed";
 }
 
-static void health_matrix_name(char *text,size_t size,const TsMatrixControls *c,int node,int destination)
+static void health_matrix_name(char *text,size_t size,const TsAudioHealthMatrix *c,int node,int destination)
 {
     int sidechain=destination && node>=TS_MATRIX_EFFECT_SC_BASE && node<TS_MATRIX_INSTANCE_DESTINATIONS;
     int effect=sidechain?node-TS_MATRIX_EFFECT_SC_BASE:ts_matrix_effect_index(node);
     if(effect>=0) {
-        const TsMatrixEffectControls *fx=&c->effect[effect];
+        const TsAudioHealthMatrixEffect *fx=&c->effect[effect];
         snprintf(text,size,"%s #%u%s",ts_matrix_effect_name(fx->type),(unsigned)fx->id,sidechain?" SIDECHAIN":"");
     } else snprintf(text,size,"%s",ts_matrix_node_name(node));
 }
@@ -224,13 +275,12 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
         health_on(s->board), health_route(s, TS_ROUTER_PEDALBOARD), enabled_slots, s->slot_count);
     if(s->matrix.enabled) {
         size_t used=strlen(text);
-        int board_insert=s->matrix.board_insert || (s->matrix.serial_mask&(1u<<TS_MATRIX_BOARD));
         snprintf(text+used,size-used,
             "  Unified routing matrix: ON; legacy order, source switches and external Insert assignments above are inactive. Processor power and Pedalboard master remain active.\n"
             "  Matrix MAIN MIX headroom: %s (only signals routed through MAIN MIX)\n"
             "  Pedalboard Matrix mode: %s\n",
-            ts_matrix_main_clip(&s->matrix)?"LEGACY CLIP before downstream effects":"FLOAT",
-            board_insert?"INSERT (full signal; master OFF passes dry)":"SEND (wet return; master OFF silences this return)");
+            s->matrix.main_clip?"LEGACY CLIP before downstream effects":"FLOAT",
+            s->matrix.board_insert?"INSERT (full signal; master OFF passes dry)":"SEND (wet return; master OFF silences this return)");
         for(int row=0;row<TS_MATRIX_ROWS;++row)for(int d=0;d<TS_MATRIX_DESTINATIONS;++d) {
             int gain=s->matrix.row[row].matrix_gain[d];if(!gain)continue;
             char from[64],to[64];
@@ -246,13 +296,14 @@ static void ts_audio_health_setup_report(char *text, size_t size, Uint32 now)
                 ts_matrix_is_processor(row) && (s->matrix.delayed[row]&ts_matrix_feedback_bit(d))?"; feedback delayed 64 samples":"");
         }
         for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
-            const TsMatrixEffectControls *fx=&s->matrix.effect[i];
+            const TsAudioHealthMatrixEffect *fx=&s->matrix.effect[i];
             if(!fx->id)continue;
             used=strlen(text);snprintf(text+used,size-used,"    Matrix effect #%u: %s; %s; mix %.1f%%\n",
                 (unsigned)fx->id,ts_matrix_effect_name(fx->type),health_on(fx->enabled),fx->mix*100);
             if(fx->type==TS_MATRIX_FX_SUNVOX) {
+                TsSunVoxControls sunvox={.patch=fx->sunvox_patch};
                 used=strlen(text);snprintf(text+used,size-used,"      %s; processing block: %u frames\n",
-                    ts_sunvox_name(&fx->sunvox),ts_sunvox_quantum(&fx->sunvox));
+                    ts_sunvox_name(&sunvox),fx->sunvox_quantum);
             }
         }
     }
@@ -635,8 +686,7 @@ static void ts_audio_session_update(AudioState *audio,TsUiState *ui)
         ts_health.setup.mosaic_time,ts_health.setup.mosaic_muted,ts_health.setup.mosaic_solo);
     ts_session_log_event("pedalboard_progress","master_gain=%.6f target=%d fade_remaining_s=%.6f matrix=%d insert=%d",
         ts_health.board_master_gain,ts_health.setup.board,ts_health.board_fade_remaining,
-        ts_health.setup.matrix.enabled,ts_health.setup.matrix.board_insert ||
-            (ts_health.setup.matrix.serial_mask&(1u<<TS_MATRIX_BOARD))!=0);
+        ts_health.setup.matrix.enabled,ts_health.setup.matrix.board_insert);
     ts_session_log_event("health_sample","generation=%u callbacks=%llu over_budget=%llu near_budget=%llu max_hold_ms=%.6f holds_over_buffer=%llu max_ui_wait_ms=%.6f backend_counter_kind=%d driver=%u lock_skips=%u recoveries=%u worker_gaps=%u profile=%d",
         audio->audio_health_generation,(unsigned long long)s->callback_count,(unsigned long long)s->deadline_overruns,
         (unsigned long long)s->near_overruns,s->control_worst_microseconds/1000,(unsigned long long)s->control_long_holds,

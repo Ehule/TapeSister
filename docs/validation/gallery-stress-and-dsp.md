@@ -19,6 +19,19 @@ private masks. Stable boards avoid repeatedly scanning all 20 slots' atomic
 transition counters. UI retirement notifications still use the existing
 atomic counters, and topology publication keeps the existing audio exclusion.
 
+The Audio Health setup snapshot retains only Matrix routing, names, effect
+identities, and other values actually reported. It no longer copies every
+embedded pedalboard and Meta control while holding the UI/audio lock. Name
+lookup and report formatting remain outside the lock; the audio renderer and
+its synchronization are unchanged. Regression checks cover report equivalence,
+relevant-field invalidation, legacy clipping/insert flags, SunVox display data,
+and exclusion of unreported processor settings. This removes known excess
+copying; it is not a measured reduction in physical-device deadline misses.
+
+Recurring main-loop locks have distinct site names for memory clearing,
+Gallery clock metadata, and the playback UI snapshot. Subsequent logs can
+identify which scope was held, rather than labeling all three as `main`.
+
 The Meta FX regressions compare scalar, span and in-place PCM bit for bit across
 all ten presets and additional random/tempo-synchronized AutoPan stages at
 44.1, 48 and 96 kHz. Uneven spans exercise macro changes, morphing, stage ramps,

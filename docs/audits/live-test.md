@@ -44,6 +44,16 @@ pretend to assign every callback deadline to an individual sub-buffer fade.
 were met. The comparison tool exposes these as `stages` and `stress_coverage`
 and reports `deadline_status` separately from successful scenario completion.
 
+The report also exposes `backend_health` and `performance_status`. Native driver
+reports, ASIO control-lock skips, successful short-lock recoveries, and JACK
+worker gaps remain separate counters. An ASIO control-lock skip leaves that
+output buffer zero-filled; a successful recovery acquires the lock and renders
+normally. Neither counter is a count of audible clicks. Native counters are
+sampled by the UI, so their deltas cover only compatible first-to-last sample
+intervals inside the measurement period. Unobserved boundaries, device changes,
+counter resets, and unavailable native counters are explicit. A zero deadline
+count does not hide observed backend skips or driver reports.
+
 ```sh
 python tools/compare_live_test_logs.py path/to/session.saved.jsonl
 ```
@@ -57,6 +67,11 @@ as individual-callback percentiles. Profiling, OS scheduling and external input
 can affect a run; silence or lack of an external signal is not evidence of
 successful audible playback. A completed test with deadline misses has reached
 an unstable operating point at those settings, even if most callbacks fit.
+
+The effect profiler's `replacement fade samples` field describes replacement
+of an effect inside a Matrix slot. Gallery movement fades use the independent
+renderer traces above; zero replacement-fade samples do not mean that Gallery
+crossfades were absent.
 
 No CPU model, project filename, movement title or particular effect identity
 is privileged by this mode. Its purpose is to expose the loaded workload's

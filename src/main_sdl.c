@@ -18953,7 +18953,7 @@ int main(int argc, char **argv)
             mosaic.drag || mosaic.mix_drag || mosaic.volume_drag || mosaic.pan_active || ui.mosaic_marker_drag || ui.mosaic_loop_drag);
         poll_file_capture_ui(&ui,&sister_window);
         if (ts_sister_runtime_can_clear(&audio.sister)) {
-            if (device) SDL_LockAudioDevice(device);
+            if (device) ts_audio_lock_device_at(device,"main: rolling memory clear");
             (void)ts_sister_runtime_perform_clear(&audio.sister);
             if (device) SDL_UnlockAudioDevice(device);
             snprintf(sister_window.model.status,
@@ -18978,7 +18978,7 @@ int main(int argc, char **argv)
             ui.overlay[0] = '\0';
         refresh_workbench_loop(device, &audio, &ui, &instrument);
         unsigned gallery_external=ts_sample_pages_external_effect_roots(&sample_pages,&instrument);
-        if(device)SDL_LockAudioDevice(device);
+        if(device)ts_audio_lock_device_at(device,"main: Gallery clock metadata");
         audio.gallery_external_roots=gallery_external;ui.mosaic_engine_stopped=audio.engine_stopped;
         ui.mosaic_grid_quarter=audio.sister.clock_controls.source==TS_CLOCK_TRACKER_SOURCE && audio.sister.master_clock.quarter_seconds>0?
             audio.sister.master_clock.quarter_seconds:audio.sister.clock_controls.bpm>0?60.0/audio.sister.clock_controls.bpm:.5;
@@ -18991,7 +18991,7 @@ int main(int argc, char **argv)
                 SDL_GetKeyboardFocus()==window,SDL_GetMouseState(NULL,NULL));
         ui_sync_dialog_workspaces(&ui);
         Uint32 health_setup_now = SDL_GetTicks();
-        if (device) SDL_LockAudioDevice(device);
+        if (device) ts_audio_lock_device_at(device,"main: playback UI snapshot");
         {
             const TsNoteVoice *voice = ts_note_bank_display_voice(&audio.notes);
             const TsPerformanceVoice *tile_voice =

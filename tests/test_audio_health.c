@@ -126,6 +126,124 @@ static void check_cpu_readout(AudioState *a,TsUiState *ui,SDL_Window *window)
     }
 }
 
+static void check_health_matrix_change(AudioState *audio,const TsUiState *ui,
+    TsAudioHealthMatrix *previous,Uint32 *now,const char *text,int present)
+{
+    *now+=250u;ts_audio_health_capture_setup(audio,ui,*now);
+    assert(memcmp(previous,&ts_health.setup.matrix,sizeof(*previous)));
+    char report[8192];ts_audio_health_setup_report(report,sizeof(report),*now);
+    assert((strstr(report,text)!=NULL)==present);
+    *previous=ts_health.setup.matrix;
+}
+
+static void check_compact_health_matrix(AudioState *audio,const TsUiState *ui)
+{
+    TsMatrixControls *matrix=&audio->sister.matrix.controls;
+    TsMatrixControls *saved=malloc(sizeof(*saved));
+    TsAudioHealthSetup *saved_setup=malloc(sizeof(*saved_setup));
+    TsAudioHealthSetup *baseline=malloc(sizeof(*baseline));
+    TsAudioHealthMatrix *previous=malloc(sizeof(*previous));
+    TsAudioHealthMatrix *other=malloc(sizeof(*other));
+    assert(saved && saved_setup && baseline && previous && other);
+    *saved=*matrix;*saved_setup=ts_health.setup;
+    /* Report-only state must not grow back into an entire DSP control bank. */
+    assert(sizeof(*previous)*4<sizeof(*matrix));
+    memset(matrix,0,sizeof(*matrix));
+    matrix->enabled=1;matrix->main_headroom=TS_MATRIX_HEADROOM_CLIP;
+    matrix->serial_mask=1u<<TS_MATRIX_BOARD;
+    matrix->effect[0]=(TsMatrixEffectControls){.id=1,.type=TS_SISTER_FX_GRAIN,.enabled=1,.mix=.5f};
+    matrix->effect[1]=(TsMatrixEffectControls){.id=2,.type=TS_MATRIX_FX_COMPRESSOR,.enabled=0,.mix=.75f};
+    /* An unresolved patch and legacy quantum exercise both report defaults. */
+    matrix->effect[2]=(TsMatrixEffectControls){.id=3,.type=TS_MATRIX_FX_SUNVOX,.enabled=1,.mix=1};
+    memcpy(matrix->input_name[0],"Stage",6);memcpy(matrix->output_name[0],"Booth",6);
+    matrix->row[TS_MATRIX_MAIN].matrix_gain[TS_MATRIX_NODES]=1000;
+    matrix->row[TS_MATRIX_NODES].pan=8;
+    matrix->row[TS_MATRIX_NODES].matrix_gain[TS_MATRIX_EQ]=1000;
+    matrix->row[TS_MATRIX_NODES].matrix_gain[TS_MATRIX_AMBISONICS]=250;
+    matrix->row[TS_MATRIX_NODES].matrix_gain[TS_MATRIX_SPEAKER_BASE+2]=2000;
+    matrix->row[TS_MATRIX_MOSAIC].matrix_gain[TS_MATRIX_EFFECT_SC_BASE+1]=1000;
+    matrix->row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1]=500;
+    matrix->row[TS_MATRIX_EFFECT_BASE].pan=-17;
+    matrix->delayed[TS_MATRIX_EFFECT_BASE]=UINT64_C(1)<<(TS_MATRIX_EFFECT_BASE+1);
+
+    /* Destination padding must never leak into session byte comparisons. */
+    memset(previous,0xa5,sizeof(*previous));memset(other,0x5a,sizeof(*other));
+    ts_audio_health_capture_matrix(previous,matrix);ts_audio_health_capture_matrix(other,matrix);
+    assert(!memcmp(previous,other,sizeof(*previous)));
+    Uint32 now=5000;ts_health.setup.valid=0;
+    ts_audio_health_capture_setup(audio,ui,now);*baseline=ts_health.setup;
+    char report[8192];ts_audio_health_setup_report(report,sizeof(report),now);
+    static const char expected[]=
+        "  Unified routing matrix: ON; legacy order, source switches and external Insert assignments above are inactive. Processor power and Pedalboard master remain active.\n"
+        "  Matrix MAIN MIX headroom: LEGACY CLIP before downstream effects (only signals routed through MAIN MIX)\n"
+        "  Pedalboard Matrix mode: INSERT (full signal; master OFF passes dry)\n"
+        "    MAIN MIX -> OUT 1/2 Booth: +0.0 dB; pan 0\n"
+        "    IN 1/2 Stage -> MASTER EQ: +0.0 dB; pan 8\n"
+        "    IN 1/2 Stage -> AMBISONICS: -12.0 dB; pan 8\n"
+        "    IN 1/2 Stage -> SPEAKER 3: +6.0 dB; pan 8\n"
+        "    MOSAIC -> COMPRESSOR #2 SIDECHAIN: +0.0 dB; pan 0\n"
+        "    GRAIN #1 -> COMPRESSOR #2: -6.0 dB; pan -17; feedback delayed 64 samples\n"
+        "    Matrix effect #1: GRAIN; ON; mix 50.0%\n"
+        "    Matrix effect #2: COMPRESSOR; OFF; mix 75.0%\n"
+        "    Matrix effect #3: SUNVOX FX; ON; mix 100.0%\n"
+        "      SunVox FX; processing block: 64 frames\n";
+    const char *section=strstr(report,"  Unified routing matrix:");assert(section);
+    assert(!strncmp(section,expected,sizeof(expected)-1));
+    assert(!strncmp(section+sizeof(expected)-1,"  Pedalboard master fade:",24));
+
+    /* These controls are deliberately absent from the report. Their changes
+       must not create a duplicate setup_snapshot with identical contents. */
+    matrix->next_effect_id=97;matrix->row[TS_MATRIX_MAIN].width=23;
+    matrix->effect[0].a=.82f;matrix->effect[0].gain_db=3;
+    memset(&matrix->effect[0].meta,0x5a,sizeof(matrix->effect[0].meta));
+    memset(&matrix->effect[0].board,0x5a,sizeof(matrix->effect[0].board));
+    matrix->effect[2].sunvox.value[7]=123;matrix->effect[2].sunvox.note=48;
+    matrix->effect[2].sunvox.ready=1;matrix->effect[2].sunvox.received=99;
+    now+=250;ts_audio_health_capture_setup(audio,ui,now);baseline->captured=now;
+    assert(!memcmp(baseline,&ts_health.setup,sizeof(*baseline)));
+    char unchanged[8192];ts_audio_health_setup_report(unchanged,sizeof(unchanged),now);
+    assert(!strcmp(report,unchanged));
+
+    matrix->row[TS_MATRIX_EFFECT_BASE].matrix_gain[TS_MATRIX_EFFECT_BASE+1]=1000;
+    check_health_matrix_change(audio,ui,previous,&now,"GRAIN #1 -> COMPRESSOR #2: +0.0 dB; pan -17",1);
+    matrix->row[TS_MATRIX_EFFECT_BASE].pan=11;
+    check_health_matrix_change(audio,ui,previous,&now,"GRAIN #1 -> COMPRESSOR #2: +0.0 dB; pan 11",1);
+    matrix->delayed[TS_MATRIX_EFFECT_BASE]=0;
+    check_health_matrix_change(audio,ui,previous,&now,"feedback delayed 64 samples",0);
+    memcpy(matrix->input_name[0],"Mic",4);
+    check_health_matrix_change(audio,ui,previous,&now,"IN 1/2 Mic -> MASTER EQ",1);
+    memcpy(matrix->output_name[0],"House",6);
+    check_health_matrix_change(audio,ui,previous,&now,"OUT 1/2 House",1);
+    matrix->effect[0].id=41;
+    check_health_matrix_change(audio,ui,previous,&now,"GRAIN #41 -> COMPRESSOR #2",1);
+    matrix->effect[1].id=7;
+    check_health_matrix_change(audio,ui,previous,&now,"MOSAIC -> COMPRESSOR #7 SIDECHAIN",1);
+    matrix->effect[0].type=TS_SISTER_FX_DELAY;
+    check_health_matrix_change(audio,ui,previous,&now,"Matrix effect #41: DELAY; ON; mix 50.0%",1);
+    matrix->effect[0].enabled=0;
+    check_health_matrix_change(audio,ui,previous,&now,"Matrix effect #41: DELAY; OFF; mix 50.0%",1);
+    matrix->effect[0].mix=.125f;
+    check_health_matrix_change(audio,ui,previous,&now,"Matrix effect #41: DELAY; OFF; mix 12.5%",1);
+    assert(ts_sunvox_select(&matrix->effect[2].sunvox,0));matrix->effect[2].sunvox.quantum=0;
+    check_health_matrix_change(audio,ui,previous,&now,ts_sunvox_factory_name(0),1);
+    matrix->effect[2].sunvox.quantum=1024;
+    check_health_matrix_change(audio,ui,previous,&now,"processing block: 1024 frames",1);
+    matrix->effect[2].sunvox.quantum=0;
+    check_health_matrix_change(audio,ui,previous,&now,"processing block: 64 frames",1);
+    matrix->main_headroom=TS_MATRIX_HEADROOM_FLOAT;
+    check_health_matrix_change(audio,ui,previous,&now,"Matrix MAIN MIX headroom: FLOAT",1);
+    matrix->serial_mask=0;
+    check_health_matrix_change(audio,ui,previous,&now,"Pedalboard Matrix mode: SEND",1);
+    matrix->board_insert=1;
+    check_health_matrix_change(audio,ui,previous,&now,"Pedalboard Matrix mode: INSERT",1);
+    matrix->enabled=0;
+    check_health_matrix_change(audio,ui,previous,&now,"Unified routing matrix: ON",0);
+    printf("Health Matrix snapshot: %zu -> %zu bytes; report and change detection preserved\n",
+        sizeof(*matrix),sizeof(*previous));
+    *matrix=*saved;ts_health.setup=*saved_setup;
+    free(other);free(previous);free(baseline);free(saved_setup);free(saved);
+}
+
 
 #include "test_audio_health_layout.inc"
 
@@ -412,6 +530,7 @@ int main(int argc, char **argv)
     matrix->main_headroom=TS_MATRIX_HEADROOM_FLOAT;
     ts_audio_health_capture_setup(a,ui,2350);ts_audio_health_setup_report(matrix_report,sizeof(matrix_report),2350);
     assert(strstr(matrix_report,"Matrix MAIN MIX headroom: FLOAT"));
+    check_compact_health_matrix(a,ui);
     char short_report[17]; memset(short_report, 'x', sizeof(short_report));
     ts_audio_health_setup_report(short_report, sizeof(short_report) - 1, 1250);
     assert(short_report[15] == '\0' && short_report[16] == 'x');

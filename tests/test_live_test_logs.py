@@ -38,6 +38,112 @@ def stress_fixture():
     return sorted(rows, key=lambda row: row["t_ms"])
 
 
+class BackendHealth(unittest.TestCase):
+    @staticmethod
+    def sample(t_ms, callbacks, generation=1, kind=1, driver=0, lock_skips=0, recoveries=0, worker_gaps=0):
+        return {"type": "health_sample", "t_ms": t_ms,
+                "detail": f"generation={generation} callbacks={callbacks} backend_counter_kind={kind} "
+                          f"driver={driver} lock_skips={lock_skips} recoveries={recoveries} worker_gaps={worker_gaps} "
+                          "max_hold_ms=999 max_ui_wait_ms=999 holds_over_buffer=999"}
+
+    def report(self, health_rows, overruns=0):
+        rows = fixture()
+        rows[4].update(peak_ms=5, over_budget=overruns)
+        rows[6]["detail"] = rows[6]["detail"].replace("over_budget=42", f"over_budget={40 + overruns}")
+        # Samples are intentionally drained after the completion record.
+        rows.extend(health_rows)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "health.jsonl"
+            path.write_text("\n".join(map(json.dumps, rows)), encoding="utf-8")
+            return module.report([path])["runs"][0]
+
+    def test_only_in_run_counter_differences_and_explicit_boundary_gaps(self):
+        result = self.report([
+            self.sample(90, 10, driver=50, lock_skips=900, recoveries=500, worker_gaps=20),
+            self.sample(110, 101, driver=7, lock_skips=3, recoveries=4, worker_gaps=2),
+            self.sample(190, 109, driver=7, lock_skips=5, recoveries=2414, worker_gaps=2),
+            self.sample(210, 111, driver=100, lock_skips=950, recoveries=9000, worker_gaps=50),
+        ])
+        health = result["backend_health"]
+        self.assertEqual(health["counter_deltas"], {"driver": 0, "lock_skips": 2, "recoveries": 2410, "worker_gaps": 0})
+        self.assertEqual(health["samples"], 2)
+        self.assertEqual((health["requested_from_ms"], health["requested_to_ms"]), (101, 202))
+        self.assertEqual(health["unobserved_intervals"], [{"from_ms": 101, "to_ms": 110}, {"from_ms": 190, "to_ms": 202}])
+        self.assertEqual((health["intervals"][0]["from_ms"], health["intervals"][0]["to_ms"]), (110, 190))
+        self.assertNotIn("max_hold_ms", json.dumps(health))
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["deadline_status"], "no_recorded_deadline_misses")
+        self.assertEqual(result["performance_status"], "performance_events_observed")
+        self.assertEqual(result["performance_observations"], ["backend_control_skips"])
+
+    def test_driver_reports_worker_gaps_and_recoveries_keep_separate_meanings(self):
+        for kind, key, expected in ((1, "driver", "backend_driver_reports"),
+                                    (2, "worker_gaps", "backend_worker_gaps"),
+                                    (1, "recoveries", None)):
+            with self.subTest(counter=key):
+                result = self.report([self.sample(110, 101, kind=kind),
+                                      self.sample(190, 109, kind=kind, **{key: 3})])
+                self.assertEqual(result["backend_health"]["counter_deltas"][key], 3)
+                self.assertEqual(result["deadline_status"], "no_recorded_deadline_misses")
+                self.assertEqual(result["performance_observations"], [expected] if expected else [])
+                self.assertEqual(result["performance_status"], "performance_events_observed" if expected
+                                 else "no_recorded_performance_events_in_observed_intervals")
+
+    def test_absent_single_and_unsupported_samples_are_unavailable_not_zero(self):
+        for rows in ([], [self.sample(110, 101)],
+                     [self.sample(110, 101, kind=0), self.sample(190, 109, kind=0)]):
+            with self.subTest(samples=len(rows)):
+                result = self.report(rows)
+                health = result["backend_health"]
+                self.assertEqual(health["status"], "unavailable")
+                self.assertTrue(all(v is None for v in health["counter_deltas"].values()))
+                self.assertEqual(health["unobserved_intervals"], [{"from_ms": 101, "to_ms": 202}])
+                self.assertTrue(result["complete"])
+                self.assertEqual(result["deadline_status"], "no_recorded_deadline_misses")
+                self.assertEqual(result["performance_status"], "insufficient_backend_observations")
+        self.assertEqual(self.report([], overruns=2)["performance_status"], "performance_events_observed")
+
+    def test_generation_or_backend_change_never_bridges_counter_baselines(self):
+        for change, reason in (({"generation": 2}, "generation_changed"), ({"kind": 2}, "backend_changed")):
+            with self.subTest(change=reason):
+                rows = [self.sample(110, 101, driver=7), self.sample(130, 103, driver=8),
+                        self.sample(150, 105, driver=50, **change), self.sample(190, 109, driver=52, **change)]
+                health = self.report(rows)["backend_health"]
+                self.assertEqual(health["counter_deltas"]["driver"], 3)
+                self.assertEqual(len(health["intervals"]), 2)
+                self.assertIn(reason, health["discontinuities"][0]["reasons"])
+                self.assertIn({"from_ms": 130, "to_ms": 150}, health["unobserved_intervals"])
+
+    def test_midrun_counter_resets_are_detected_even_if_final_total_is_higher(self):
+        for key in ("driver", "lock_skips", "recoveries", "worker_gaps", "callbacks"):
+            with self.subTest(counter=key):
+                rows = [self.sample(t, c, **({key: v} if key != "callbacks" else {}))
+                        for t, c, v in ((110, 101, 3), (130, 103, 5), (150, 105, 1), (190, 109, 10))]
+                if key == "callbacks":
+                    rows[2]["detail"] = rows[2]["detail"].replace("callbacks=105", "callbacks=1")
+                health = self.report(rows)["backend_health"]
+                self.assertEqual(len(health["intervals"]), 2)
+                self.assertIn("counter_reset", health["discontinuities"][0]["reasons"])
+                if key != "callbacks":
+                    self.assertEqual(health["counter_deltas"][key], 11)
+
+    def test_invalid_or_duplicate_time_samples_break_observation_continuity(self):
+        for mutation in ("missing", "negative", "invalid", "time"):
+            with self.subTest(mutation=mutation):
+                rows = [self.sample(t, c) for t, c in ((110, 101), (130, 103), (150, 105), (170, 107), (190, 109))]
+                if mutation == "time":
+                    rows[2]["t_ms"] = 130
+                else:
+                    replacement = {"missing": "", "negative": "lock_skips=-1", "invalid": "lock_skips=unknown"}[mutation]
+                    rows[2]["detail"] = rows[2]["detail"].replace("lock_skips=0", replacement)
+                result = self.report(rows)
+                health = result["backend_health"]
+                self.assertEqual(len(health["intervals"]), 2)
+                self.assertTrue(health["discontinuities"])
+                self.assertEqual(health["counter_deltas"]["lock_skips"], 0)
+                self.assertEqual(result["performance_status"], "insufficient_backend_observations")
+
+
 class Comparison(unittest.TestCase):
     def test_density_alignment_requires_simultaneous_rendered_peaks(self):
         proof = ("job=6 method=peak_midpoints from=0 to=1 from_id=42 to_id=77 "

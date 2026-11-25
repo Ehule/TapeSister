@@ -274,8 +274,9 @@ void ts_profile_report(char *text, size_t capacity)
         "\nMatrix effect instances: last measured identity in each slot; replacement restarts that row.\n"
         "Each slot samples 1/32 callbacks on a separate rotating phase; block times sum its work across that callback.\n"
         "Totals/rates are estimates over the whole profile; peaks are observed samples, not worst-case bounds.\n"
-        "Crossfades include both engines. Rows are children of Matrix effects DSP; do not add them again.\n"
-        "Effect | slot / generation | samples | avg ms/block | peak ms/block | ms/s | %% callback | crossfade samples | last seen s ago\n");
+        "Effect replacement fades include both engines; Gallery overlaps are recorded separately in the session trace.\n"
+        "Rows are children of Matrix effects DSP; do not add them again.\n"
+        "Effect | slot / generation | samples | avg ms/block | peak ms/block | ms/s | %% callback | replacement fade samples | last seen s ago\n");
     if (n < 0) return;
     used += (size_t)n;
     for (int i = 0; i < TS_MATRIX_EFFECT_CAPACITY && used < capacity; ++i) {

@@ -115,6 +115,123 @@ def system_usage(run):
     }
 
 
+def backend_health_usage(run, begin_ms, end_ms):
+    """Subtract only compatible, in-run native counter samples.
+
+    These UI-sampled counters bound observations to intervals, not individual
+    callbacks. A reset or missing sample identity must not join two baselines.
+    """
+    keys = ("driver", "lock_skips", "recoveries", "worker_gaps")
+    samples = sorted((r for r in run if r.get("type") == "health_sample"
+                      and begin_ms <= r["t_ms"] <= end_ms), key=lambda r: r["t_ms"])
+    intervals, discontinuities = [], []
+    excluded_samples = {"missing_or_invalid_health_counters": 0, "native_counters_unavailable": 0}
+    unavailable_kinds = set()
+    first = last = None
+    count = 0
+
+    def finish():
+        if first is not None and count >= 2:
+            intervals.append({
+                "from_ms": first["t_ms"], "to_ms": last["t_ms"],
+                "generation": first["generation"],
+                "backend_counter_kind": first["backend_counter_kind"],
+                "backend": {1: "asio", 2: "jack"}[first["backend_counter_kind"]],
+                "samples": count,
+                "counter_deltas": {k: last[k] - first[k] for k in keys},
+            })
+
+    for row in samples:
+        info = fields(row)
+        try:
+            current = {k: int(info[k]) for k in
+                       ("generation", "backend_counter_kind", "callbacks") + keys}
+            if any(v < 0 for v in current.values()):
+                raise ValueError("negative native counter")
+            current["t_ms"] = row["t_ms"]
+        except (KeyError, ValueError):
+            finish()
+            if last is not None:
+                discontinuities.append({"from_ms": last["t_ms"], "to_ms": row["t_ms"],
+                                        "reasons": ["missing_or_invalid_health_counters"]})
+            first = last = None
+            count = 0
+            excluded_samples["missing_or_invalid_health_counters"] += 1
+            continue
+        if current["backend_counter_kind"] not in (1, 2):
+            finish()
+            if last is not None:
+                discontinuities.append({"from_ms": last["t_ms"], "to_ms": row["t_ms"],
+                                        "reasons": ["native_counters_unavailable"]})
+            first = last = None
+            count = 0
+            excluded_samples["native_counters_unavailable"] += 1
+            unavailable_kinds.add(current["backend_counter_kind"])
+            continue
+        reasons = []
+        if last is not None:
+            if current["generation"] != last["generation"]:
+                reasons.append("generation_changed")
+            if current["backend_counter_kind"] != last["backend_counter_kind"]:
+                reasons.append("backend_changed")
+            if current["t_ms"] <= last["t_ms"]:
+                reasons.append("nonincreasing_sample_time")
+            if any(current[k] < last[k] for k in ("callbacks",) + keys):
+                reasons.append("counter_reset")
+        if reasons:
+            finish()
+            discontinuities.append({"from_ms": last["t_ms"], "to_ms": current["t_ms"],
+                                    "reasons": reasons})
+            first = last = None
+            count = 0
+        if first is None:
+            first = current
+        last = current
+        count += 1
+    finish()
+    gaps = []
+    cursor = begin_ms
+    for interval in intervals:
+        if interval["from_ms"] > cursor:
+            gaps.append({"from_ms": cursor, "to_ms": interval["from_ms"]})
+        cursor = interval["to_ms"]
+    if cursor < end_ms:
+        gaps.append({"from_ms": cursor, "to_ms": end_ms})
+    return {
+        "status": "observed_intervals" if intervals else "unavailable",
+        "requested_from_ms": begin_ms, "requested_to_ms": end_ms,
+        "samples": len(samples),
+        "counter_deltas": {k: sum(i["counter_deltas"][k] for i in intervals) if intervals else None for k in keys},
+        "intervals": intervals, "unobserved_intervals": gaps,
+        "discontinuities": discontinuities,
+        "excluded_samples": excluded_samples, "unavailable_backend_kinds": sorted(unavailable_kinds),
+        "note": "Deltas cover only compatible first-to-last health-sample intervals, excluding the initial sample's retained counts and unobserved boundaries/reset gaps. Sample timestamps do not locate individual backend events. driver means backend reports; lock_skips means ASIO buffers skipped for a control lock; recoveries means successful short-lock recoveries, not skipped buffers or dropouts; worker_gaps means JACK worker queue gaps. No native counters are available for other backend kinds. No retained lock/timing maxima are imported.",
+    }
+
+
+def observed_performance(valid, overruns, timing, health):
+    """Keep backend events separate from the backward-compatible deadline result."""
+    observations = []
+    if overruns > 0:
+        observations.append("callback_deadline_misses")
+    if timing["largest_extra_start_gap_ms"] > 0:
+        observations.append("callback_start_gaps")
+    for key, label in (("driver", "backend_driver_reports"),
+                       ("lock_skips", "backend_control_skips"), ("worker_gaps", "backend_worker_gaps")):
+        if (health["counter_deltas"][key] or 0) > 0:
+            observations.append(label)
+    if not valid:
+        status = "incomplete"
+    elif observations:
+        status = "performance_events_observed"
+    elif (health["status"] == "unavailable" or health["discontinuities"]
+          or any(health["excluded_samples"].values())):
+        status = "insufficient_backend_observations"
+    else:
+        status = "no_recorded_performance_events_in_observed_intervals"
+    return status, observations
+
+
 def stage_usage(run, windows):
     """Retain separate full-play, matched-position and recovery intervals."""
     stages = [r for r in run if r.get("type") == "live_test_stage"]
@@ -380,6 +497,8 @@ def summarize(path):
     rate, frames = float(start.get("rate", 0)), float(start.get("frames", 0))
     budget = 1000 * frames / rate if rate > 0 and frames > 0 else None
     peak = timing["observed_peak_ms"]
+    health = backend_health_usage(run, measurement_begin, measurement_end)
+    performance_status, performance_observations = observed_performance(valid, overruns, timing, health)
     return {
         "file": str(path), "complete": valid, "reason": end.get("reason", "unknown"),
         "scenario": start["scenario"], "project_hash": start["project_hash"],
@@ -389,6 +508,8 @@ def summarize(path):
         "completed_actions": len(ends), "planned_actions": planned,
         "callbacks": callbacks, "over_budget": overruns,
         "deadline_status": "incomplete" if not valid else "deadline_misses_observed" if overruns else "no_recorded_deadline_misses",
+        "performance_status": performance_status,
+        "performance_observations": performance_observations,
         "buffer_budget_ms": budget,
         "observed_peak_budget_percent": 100 * peak / budget if peak is not None and budget else None,
         "over_budget_percent": 100 * overruns / callbacks if callbacks else None,
@@ -396,6 +517,7 @@ def summarize(path):
         "phase_usage": phase_usage(run, windows),
         "movements": movements,
         "timing": timing,
+        "backend_health": health,
         "system_usage": system_usage(run),
         "stages": stages,
         "stress_coverage": coverage,
