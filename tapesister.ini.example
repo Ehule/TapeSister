@@ -45,16 +45,18 @@ chain_stamp_crossfade_ms=3
 ripple_cut_crop_canvas=0
 
 [Audio]
-; Opt-in diagnostic for whichever project you load: 0 = off, 1 = scan its Gallery.
-; Restart, open a project, then press Mosaic Play when GALLERY TEST ARMED appears.
-; Visits every movement; samples playback, paused tails and stopped-engine load.
-; About 67 seconds per nonempty movement (+11 with markers), 12 seconds if empty.
-; Logs/profiles export to the project's logs folder. Esc aborts. Reload afterward.
-; 2/3 retain the legacy full Keter test (3 adds profiles), original Tree04 only.
-; 4 = adaptive full-play/stress diagnostic for any Gallery, with real crossfades.
-; Plays each populated movement through, then exercises dense passages, FX Canvas,
-; overlapping scenes and recovery. Estimated duration appears before Play.
-; Full playback disables detailed profiling; the stress stages enable it.
+; Live diagnostic mode (restart TapeSister after changing this setting).
+; 0 = Off. Normal editing and playback.
+; 1 = Quick Gallery scan. Samples playback, paused tails and stopped-engine load.
+;     About 67 s per populated movement (+11 s with markers), 12 s per empty movement.
+; 2 = Full Keter playback, profiling off.
+; 3 = Full Keter playback with per-effect profiling.
+; 4 = Full Gallery stress test. Plays each populated movement through with crossfades,
+;     then profiles dense passages, FX Canvas, overlapping movements and transport recovery.
+; Modes 1 and 4 use the loaded project's Gallery and show an estimated duration.
+; Modes 2 and 3 require the original Tree-of-Life-Live-FX-04 project.
+; Open the project, then press Mosaic Play when armed. Esc stops the test.
+; Results go to the project's logs folder. Reload the project after testing.
 diagnostic_live_test=0
 
 ; Auto is recommended. Windows also supports WASAPI and DirectSound.
