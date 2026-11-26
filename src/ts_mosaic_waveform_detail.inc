@@ -98,11 +98,14 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     if(dim){color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(19,20,26)),.70f);fill=ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(23,24,30));}
     MosaicCardStyle style=mosaic_card_style(ui,e,w/sx,h/sy,selected);
     int hovered=e->id==ui->mosaic_hover_event;
+    int pixel=(int)fmax(1,fmin(round(fmin(sx,sy)*.85),fmin(w/12,h/7)));
+    int tiny=!ghost && style.compact && w>=12*pixel && h>=7*pixel;
+    CanvasTextSurface surface={d->pixels,d->width,0,0,d->width,d->height};
     if(style.compact)fill=mosaic_mix_color(fill,color,dim?.10f:selected?.32f:.24f);
     MosaicFadeSurface fades={d->pixels,d->width,0,0,d->width,d->height,sx,sy,rate};
     if(ghost)color=mosaic_mix_color(color,ts_theme_color(active_palette(), TS_THEME_MOSAIC, TS_COLOR_PANEL, RGB(16,18,24)),.55f);
     else mosaic_detail_rect(d,x,y,right,bottom,fill);
-    if(w<8*sx || h<8*sy) {
+    if((w<8*sx || h<8*sy) && !tiny) {
         mosaic_detail_rect(d,x,y,right,bottom,selected?mosaic_selection_color(ui,e->id==ui->mosaic_selected):hovered?mosaic_hover_color(color):color);return;
     }
     if(e->source->video_path[0]) {
@@ -111,13 +114,14 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
         mosaic_card_edges(&fades,x,y,right,bottom,color,mosaic_mix_color(color,fill,.4f),selected);
         const char *label=style.compact?"VISUAL":ts_mosaic_video_overridden(ui->mosaic,e)?"VISUAL / OVERRIDDEN":e->source->video_pool?"VISUAL / RANDOM POOL":"VISUAL / FILE";
         int chars=style.chars;char line[64];snprintf(line,sizeof(line),"%.*s",chars,label);
-        if(chars>0)mosaic_detail_text(d,x+mosaic_detail_pixel(style.margin*sx),y+mosaic_detail_pixel((style.compact?2:5)*sy),line,color,sx,sy);
+        if(tiny)canvas_tiny_text(&surface,x+2*pixel,y+pixel,pixel,(int)fmin(63,(w-4*pixel)/(4*pixel)),mosaic_layer_name(ui,e),color);
+        else if(chars>0)mosaic_detail_text(d,x+mosaic_detail_pixel(style.margin*sx),y+mosaic_detail_pixel((style.compact?2:5)*sy),line,color,sx,sy);
         if(!style.compact && h>24*sy){snprintf(line,sizeof(line),"%.*s",chars,e->video_random_start?"RANDOM POSITION":"FROM BEGINNING");mosaic_detail_text(d,x+5*bx,y+15*by,line,color,sx,sy);}
         if(!ghost && style.focused)mosaic_resize_handles(&fades,ui,e,x,y,right,bottom,selected);
         return;
     }
     uint32_t outer=mosaic_mix_color(color,fill,.50f);
-    int first=(int)fmax(0,fmin(d->height,(double)y+mosaic_detail_pixel(style.header*sy)));
+    int first=(int)fmax(0,fmin(d->height,(double)y+(tiny?7*pixel:mosaic_detail_pixel(style.header*sy))));
     int last=(int)fmax(0,fmin(d->height,(double)bottom-mosaic_detail_pixel(style.footer*sy)));
     double a=fmax(0,(double)x+2*bx),b=fmin(d->width,(double)right-2*bx);
     double center=x+w*.5,half=fmax(0,(w-14*sx)*.43);
@@ -160,7 +164,10 @@ static void mosaic_detail_card(TsUiWaveformDetail *d,const TsUiState *ui,
     mosaic_card_edges(&fades,x,y,right,bottom,border,style.focused?border:mosaic_mix_color(border,fill,.4f),selected);
     int chars=style.chars;
     char label[100];int64_t tx=x+mosaic_detail_pixel(style.margin*sx);
-    if(chars>0) {
+    if(tiny) {
+        canvas_tiny_text(&surface,x+2*pixel,y+pixel,pixel,(int)fmin(63,(w-4*pixel)/(4*pixel)),mosaic_layer_name(ui,e),
+            dim?color:ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)));
+    } else if(chars>0) {
         mosaic_card_name(label,sizeof(label),mosaic_layer_name(ui,e),chars);
         mosaic_detail_text(d,tx,y+mosaic_detail_pixel((style.compact?2:4)*sy),label,
             dim?color:ts_theme_color(active_palette(),TS_THEME_MOSAIC,TS_COLOR_TEXT,RGB(224,214,233)),sx,sy);

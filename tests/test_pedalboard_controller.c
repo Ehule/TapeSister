@@ -42,6 +42,44 @@ static void live_insertion_mix(void)
         }
     }
 }
+static void pedalboard_input_pulse(void)
+{
+    TsRoutingMatrix *matrix=&audio.sister.matrix;
+    assert(sister.model.board_selected==1);
+    matrix->input_peak[TS_MATRIX_BOARD]=.1f;
+    matrix->input_peak[TS_MATRIX_EFFECT_BASE+1]=.2f;
+    matrix->output_peak[TS_MATRIX_EFFECT_BASE]=.5f; /* A selected board can have a tail and no input. */
+    const int p1=7*TS_SISTER_UI_WIDTH+60,p2=7*TS_SISTER_UI_WIDTH+105,p3=7*TS_SISTER_UI_WIDTH+150;
+    ts_sister_ui_render(&sister.framebuffer,sister_board_view(&sister),&ui.palette);
+    uint32_t quiet=sister.framebuffer.pixels[p2];
+    sister_board_activity(&sister,&audio,0,1);
+    assert(sister.model.board_receiving==5u);
+    ts_sister_ui_render(&sister.framebuffer,sister_board_view(&sister),&ui.palette);
+    uint32_t low=sister.framebuffer.pixels[p1];
+    assert(low!=quiet && sister.framebuffer.pixels[p2]==quiet && sister.framebuffer.pixels[p3]==low);
+    sister_board_activity(&sister,&audio,480,1);
+    ts_sister_ui_render(&sister.framebuffer,sister_board_view(&sister),&ui.palette);
+    assert(sister.framebuffer.pixels[p1]!=low && sister.framebuffer.pixels[p2]==quiet);
+    matrix->input_peak[TS_MATRIX_EFFECT_BASE+8]=.1f;
+    sister.model.board_tab_first=8;
+    sister_board_activity(&sister,&audio,480,1);
+    assert(sister.model.board_receiving==(1u<<9));
+    sister.model.board_tab_first=0;
+    audio.engine_stopped=1;
+    sister_board_activity(&sister,&audio,480,1);
+    assert(!sister.model.board_receiving && !sister.model.board_pulse);
+    audio.engine_stopped=0;
+    matrix->controls.enabled=0;
+    audio.sister.router.input_peak[TS_ROUTER_PEDALBOARD]=.1f;
+    sister_board_activity(&sister,&audio,480,1);
+    assert(sister.model.board_receiving==1u);
+    sister_board_activity(&sister,&audio,480,0);
+    assert(!sister.model.board_receiving && !sister.model.board_pulse);
+    matrix->controls.enabled=1;
+    matrix->input_peak[TS_MATRIX_BOARD]=0;
+    matrix->input_peak[TS_MATRIX_EFFECT_BASE+1]=matrix->input_peak[TS_MATRIX_EFFECT_BASE+8]=0;
+    matrix->output_peak[TS_MATRIX_EFFECT_BASE]=audio.sister.router.input_peak[TS_ROUTER_PEDALBOARD]=0;
+}
 int main(int argc,char **argv)
 {
     SDL_SetMainReady();SDL_setenv("SDL_VIDEODRIVER","dummy",1);assert(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -56,6 +94,7 @@ int main(int argc,char **argv)
     TsSisterFxControls shared=audio.sister.parameters.fx;
     sister_board_open(c.effect[0].id);sister_board_sync(&audio,&ui,&sister);
     assert(sister.board_id==c.effect[0].id && sister.model.board_selected==1 && sister.model.board_count==17);
+    pedalboard_input_pulse();
     click(190,55);
     float edited=audio.sister.matrix.controls.effect[0].board.slot[0].gain_db;
     assert(edited!=0 && audio.sister.matrix.controls.effect[1].board.slot[0].gain_db==0);

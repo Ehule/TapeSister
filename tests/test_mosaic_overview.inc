@@ -23,6 +23,16 @@ static void test_mosaic_overview(SDL_Window *window)
     ts_ui_render(&hover,&ui,&instrument);
     assert(plain.pixels[86*640+162]!=hover.pixels[86*640+162]);
     assert(!memcmp(a,&before,sizeof(before)) && scene->history_count==history && scene->time==0);
+    ui.mosaic_hover_event=0;a->duration=6;
+    TsUiWaveformDetail tiles[2]={{0}};
+    ts_ui_waveform_details_begin(tiles,1280,800);ts_ui_render(&plain,&ui,&instrument);
+    assert(ts_ui_waveform_detail_finish(&tiles[0],&plain));
+    uint32_t label_ink=ts_theme_color(&ui.palette,TS_THEME_MOSAIC,TS_COLOR_TEXT,0xffe0d6e9);
+    int seen=0;
+    for(int y=41;y<47;++y)for(int x=24;x<61;++x)seen+=tiles[0].pixels[y*tiles[0].width+x]==label_ink;
+    assert(seen>12);
+    for(int i=0;i<2;++i)ts_ui_waveform_detail_free(&tiles[i]);
+    a->duration=before.duration;ui.mosaic_hover_event=a->id;
     /* A stationary pointer follows the new visible card after scrolling. */
     ui.mosaic_scroll=50;mosaic_poll(0,&ui,&instrument,&mosaic);assert(ui.mosaic_hover_event==b->id);
     motion(window,400,200);assert(!ui.mosaic_hover_event);

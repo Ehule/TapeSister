@@ -20,6 +20,29 @@ static int sister_board_slot(const TsMatrixControls *c,uint32_t id)
         if(c->effect[i].id==id && c->effect[i].type==TS_MATRIX_FX_PEDALBOARD)return i;
     return -1;
 }
+/* The caller already holds the audio lock used for the other UI meters. */
+static void sister_board_activity(SisterWindow *s,const AudioState *audio,Uint32 now,int output_running)
+{
+    TsSisterUiModel *model=&s->model;
+    uint32_t receiving=0;
+    if(output_running && !audio->engine_stopped && model->fx_page==1 && !model->preset_manage_open) {
+        const TsRoutingMatrix *matrix=&audio->sister.matrix;
+        int end=SDL_min(model->board_tab_first+8,model->board_count);
+        for(int at=model->board_tab_first;at<end;++at) {
+            float input=0;
+            if(at==0)input=matrix->controls.enabled?matrix->input_peak[TS_MATRIX_BOARD]:
+                audio->sister.router.input_peak[TS_ROUTER_PEDALBOARD];
+            else if(matrix->controls.enabled) {
+                int slot=sister_board_slot(&matrix->controls,s->board_ids[at]);
+                if(slot>=0)input=matrix->input_peak[TS_MATRIX_EFFECT_BASE+slot];
+            }
+            if(input>.0001f)receiving|=UINT32_C(1)<<at;
+        }
+    }
+    unsigned phase=(now/60u)%16u;
+    model->board_receiving=receiving;
+    model->board_pulse=receiving?(uint8_t)(phase<=8u?phase:16u-phase):0;
+}
 static void sister_board_history_finish(SDL_AudioDeviceID device,AudioState *audio,
     TsSamplePages *pages,TsInstrument *bank)
 {

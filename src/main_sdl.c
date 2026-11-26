@@ -19067,6 +19067,8 @@ int main(int argc, char **argv)
         spatial_capture(&audio,&ui);
         master_eq_snapshot(&audio,&ui);
         ts_audio_health_capture_setup(&audio, &ui, health_setup_now);
+        if (sister_window.model.visible && !sister_window.minimized)
+            sister_board_activity(&sister_window,&audio,health_setup_now,ts_audio_output_is_running());
         /* Read the frozen Matrix pair and its position together while the
            existing voice/UI lock owns the audio state. No drawing happens here. */
         ts_sister_ui_prism_nebula_update(&sister_window.model,SDL_GetTicks(),

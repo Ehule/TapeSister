@@ -317,6 +317,7 @@ editing gestures apply to the FX workspace; Z, Shift+Z and M follow Mosaic.
 | F2 / right-click then Name / color | Edit name and color; with multiple selected cards, apply color to the selection with names disabled |
 | F2 on selected cables / right-click then Cable color | Edit cable color, or the selected cable group; colors save with the project and support Undo/Redo |
 | E (KEYS off) | Open/focus FX Canvas from Mosaic or an effect editor; press E again in FX Canvas to return to Mosaic |
+| F | Toggle FLOW in the outer FX Canvas |
 | Grave (backtick) in FX Canvas | Return directly to Mosaic |
 | Escape in FX Canvas | Return to Mosaic; active gestures/dialogs cancel first |
 
@@ -351,6 +352,12 @@ original source/type label; Reset restores the original label and automatic
 type color. Names/colors are saved with the project and copied with effects.
 They affect FX Canvas presentation, not sample filenames. Both card-name and
 text-label editors show a blinking insertion cursor.
+
+**Flow Color** in **Name / Color**, or **Flow color...** in the canvas menu,
+sets one dot color across the project. **Reset** then **Apply** restores the
+cable colors. **F** toggles the moving dots. Long active cables show more dots
+so the direction stays visible when zoomed into the middle of a route. The dots
+move slowly on screen at every zoom and additional dots fade in as you zoom in.
 
 Delete protects fixed buses and hardware endpoints. Their selection still supports
 positioning, resizing and framing. Cable selection does not select either endpoint.

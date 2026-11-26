@@ -6,7 +6,10 @@ typedef struct {
     TsSisterParameters parameters;TsMasterEqControls eq;TsEqMorph morph;
     int limiter_enabled;float ceiling,lookahead,release;
 } FxProcessorState;
-typedef struct {uint64_t canvas,epoch,card[TS_MOSAIC_EVENTS];} MatrixPlayingCards;
+typedef struct {
+    uint64_t canvas,epoch,card[TS_MOSAIC_EVENTS],signal_card[TS_MOSAIC_EVENTS];
+    float peak[TS_MOSAIC_EVENTS];
+} MatrixPlayingCards;
 typedef struct {
     MatrixPlayingCards playing[2];
     FxProcessorState fixed;TsMasterEqControls live_eq;int eq_morph_owned;

@@ -5759,12 +5759,20 @@ void ts_sister_ui_render(TsFramebuffer *fb, const TsSisterUiModel *model,
     }
 
     if (model->fx_page == 1) {
-        rect(fb,0,0,436,36,ts_theme_color(active_palette(),render_group,TS_COLOR_BACKGROUND,RGB(12,12,12)));
+        uint32_t header=ts_theme_color(active_palette(),render_group,TS_COLOR_BACKGROUND,RGB(12,12,12));
+        rect(fb,0,0,436,36,header);
         int boards=model->board_count>0?model->board_count:1;
+        uint32_t pulse=palette_blend(header,RGB(98,230,112),52+model->board_pulse*6);
         sister_compact_button(fb,10,8,26,"<",model->board_tab_first>0);
         for(int i=0;i<8 && model->board_tab_first+i<boards;++i){char name[12];
-            int at=model->board_tab_first+i;snprintf(name,sizeof(name),"P%d",at+1);
-            sister_compact_button(fb,40+i*45,8,43,name,at==model->board_selected);
+            int at=model->board_tab_first+i,x=40+i*45;snprintf(name,sizeof(name),"P%d",at+1);
+            sister_compact_button(fb,x,8,43,name,at==model->board_selected);
+            if(model->board_receiving&(UINT32_C(1)<<at)) {
+                rect(fb,x-1,7,45,1,pulse);
+                rect(fb,x-1,26,45,1,pulse);
+                rect(fb,x-1,8,1,18,pulse);
+                rect(fb,x+43,8,1,18,pulse);
+            }
         }
         sister_compact_button(fb,404,8,26,">",model->board_tab_first+8<boards);
         char effect_transition_caption[24];

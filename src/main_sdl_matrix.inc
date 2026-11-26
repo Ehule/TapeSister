@@ -836,8 +836,19 @@ static void matrix_audio_publish(AudioState *audio)
         MatrixPlayingCards *v=&w->playing[c];v->epoch=m->epoch;
         if(audio->gallery)for(int j=0;j<audio->gallery->count;++j)
             if(audio->gallery->canvas[j].scene==m)v->canvas=audio->gallery->canvas[j].id;
+        float gain=program*audio->sister.performance_gain_current[2];
+        float audition=m->audition_voice.output_route.activity_source*gain;
+        m->audition_voice.output_route.activity_source=m->audition_voice.output_route.activity_send=0;
         for(int i=0;i<TS_MOSAIC_EVENTS;++i) {
             const TsMosaicEvent *card=&m->events[i];const TsMosaicVoice *voice=&m->voices[i];
+            TsSourceRouteVoice *route=&m->voices[i].output_route;
+            float peak=c?route->activity_source*gain:w->card_source[i];
+            if(c)route->activity_source=route->activity_send=0;
+            if(!(card->live?!m->live_paused:m->playing))peak=0;
+            if(card->id==m->audition_voice.id)peak=fmaxf(peak,audition);
+            if(card->id && peak>.0001f) {
+                v->signal_card[i]=card->id;v->peak[i]=peak;
+            }
             if(card->id && voice->id==card->id && voice->active && voice->audible_gain>0 &&
                (card->live?!m->live_paused:m->playing))v->card[i]=card->id;
             if(card->id && m->audition_id==card->id && m->audition_voice.active)v->card[i]=card->id;
@@ -988,10 +999,9 @@ static int mx_paint_changed(TsSamplePages *pages,TsInstrument *bank)
         int phase=(SDL_GetTicks()-fx_canvas.text_blink)/500%2;
         changed|=phase!=fx_canvas.text_phase;fx_canvas.text_phase=phase;
     }
-    /* Animate only the optional playing view, at the existing 20 Hz UI poll.
-       No graph rebuild, audio lock, or idle animation is required. */
-    if(w->canvas && fx_canvas.active_view)for(int i=0;i<fx_canvas.count;++i)
-        if(fx_row_playing(fx_canvas.node[i].row)){changed=1;break;}
+    /* Only visible cables carrying sound request animation frames between
+       snapshot changes. The usual 20 Hz window poll bounds presentation. */
+    if(w->canvas && !fx_canvas.meta && w->layout->canvas_flow && fx_flow_visible)changed=1;
     return changed || w->dirty || w->rename>=0;
 }
 static void matrix_update(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank)
@@ -1248,12 +1258,13 @@ static int matrix_event(SDL_Event *e,SDL_Window *main,SDL_AudioDeviceID device,A
     w->history_skip=0;
     if(edit && !w->pending){snprintf(w->status,sizeof(w->status),"EDIT NOT APPLIED: CANNOT ALLOCATE UNDO SNAPSHOT.");return 1;}
     int original=w->original_active;
-    if(properties && edit){if(device)SDL_LockAudioDevice(device);
+    int object_properties=properties && edit && !fx_canvas.properties_flow_tab;
+    if(object_properties){if(device)SDL_LockAudioDevice(device);
         for(int c=0;c<mx_scene_count();++c){TsMosaic *m=mx_scene_at(c);int found=0;
             for(int i=0;i<fx_canvas.properties_count;++i)found|=fx_canvas.properties_rows[i].kind==3 && mx_card_scene(fx_canvas.properties_rows[i])==m;
             if(found)ts_mosaic_checkpoint(m);}}
     int result=properties?fx_properties_event(e):matrix_event_inner(e,main,device,audio,ui,pages,bank);
-    if(properties && edit && device)SDL_UnlockAudioDevice(device);
+    if(object_properties && device)SDL_UnlockAudioDevice(device);
     if(w->pending && (!w->drag || (e->type==SDL_MOUSEBUTTONUP && !fx_modal()))) {
         MatrixSnapshot *after=mx_snapshot(device,audio,pages,bank);
         if(!after && !w->history_skip) {

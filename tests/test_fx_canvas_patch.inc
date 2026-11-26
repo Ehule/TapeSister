@@ -64,6 +64,17 @@ static void patch_workflow(void)
     key(SDLK_F2,0);properties_click(480,296);properties_click(70,294);
     assert(!fx_canvas.properties && !position->name[0] && !position->color);
     key(SDLK_z,KMOD_CTRL);assert(!strcmp(position->name,"ANGELIC DRIVE") && position->color==color);
+    key(SDLK_F2,0);properties_click(300,294);
+    assert(fx_canvas.properties_flow_tab && !w->layout->canvas_flow_color);
+    properties_click(16+11*33+5,110);key(SDLK_RETURN,0);
+    assert(w->layout->canvas_flow_color==fx_swatch(11));
+    assert(!strcmp(position->name,"ANGELIC DRIVE") && position->color==color);view_codec();
+    key(SDLK_z,KMOD_CTRL);assert(!w->layout->canvas_flow_color);
+    key(SDLK_y,KMOD_CTRL);assert(w->layout->canvas_flow_color==fx_swatch(11));
+    fx_context_run(FX_CONTEXT_FLOW_COLOR,0,&audio,&ui,&pages,&bank);
+    assert(fx_canvas.properties && fx_canvas.properties_flow_tab && fx_canvas.properties_flow_only);
+    properties_click(480,294);key(SDLK_RETURN,0);
+    assert(!w->layout->canvas_flow_color && position->color==color);
     key(SDLK_F2,0);matrix_hide();assert(!fx_canvas.properties && (SDL_GetWindowFlags(fx_properties_window.window)&SDL_WINDOW_HIDDEN));
     w->visible=1;SDL_ShowWindow(w->window);
     /* Native replacement uses the actual picker and preserves all main cables. */

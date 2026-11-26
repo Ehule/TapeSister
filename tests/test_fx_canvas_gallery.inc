@@ -17,7 +17,8 @@ static void gallery_view(void)
     pages.gallery=ts_gallery_create(pages.mosaic);assert(pages.gallery);
     assert(ts_gallery_add(pages.gallery,error,sizeof(error)));
     TsMosaicGallery *g=pages.gallery;
-    float samples[16]={.1f};TsSample sample={.data=samples,.frames=16,.channels=1,.sample_rate=48000};
+    float samples[16];for(int i=0;i<16;++i)samples[i]=.1f;
+    TsSample sample={.data=samples,.frames=16,.channels=1,.sample_rate=48000};
     TsMosaicEvent *cards[2];
     for(int c=0;c<2;++c) {
         TsMosaic *m=g->canvas[c].scene;TsMosaicSource *s=ts_mosaic_source(m,&sample,error,sizeof(error));assert(s);
@@ -89,7 +90,21 @@ static void gallery_view(void)
     /* Playing snapshots include the outgoing movement during a crossfade. */
     g->outgoing=1;
     for(int i=0;i<2;++i){TsMosaic *m=g->canvas[i].scene;m->playing=1;m->voices[0].id=cards[i]->id;m->voices[0].active=1;m->voices[0].audible_gain=1;}
+    float saved_gain=audio.mixer.program_gain,saved_mosaic_gain=audio.sister.performance_gain_current[2];
+    audio.mixer.program_gain=audio.sister.performance_gain_current[2]=1;
+    g->canvas[0].scene->voices[0].output_route.activity_source=.25f;
+    g->canvas[1].scene->voices[0].output_route.activity_source=.5f;
+    assert(!fx_canvas.active_view);
     mx_capture_activity(0,&audio,&pages,&bank,50);assert(fx_row_playing(first) && fx_row_playing(second));
+    assert(fx_row_level(first)==.25f && fx_row_level(second)==.5f);
+    mx_capture_activity(0,&audio,&pages,&bank,50);
+    assert(fx_row_playing(first) && fx_row_playing(second) && !fx_row_level(first) && !fx_row_level(second));
+    TsMosaic *playing=g->canvas[0].scene;
+    for(int frame=0;frame<12;++frame)(void)ts_mosaic_read(playing,48000);
+    mx_capture_activity(0,&audio,&pages,&bank,50);
+    assert(fx_row_level(first)>0 && !fx_row_level(second));
+    playing->time=0;
+    audio.mixer.program_gain=saved_gain;audio.sister.performance_gain_current[2]=saved_mosaic_gain;
     toolbar_click(FX_TOOL_MOVEMENT);click(400,122+12,1);assert(fx_canvas.active_view && gallery_cards()==2);
     assert(fx_label_visible(heading_index(first.canvas)) && fx_label_visible(heading_index(second.canvas)));
     if(getenv("TS_FX_PREVIEW")){char path[1024];snprintf(path,sizeof(path),"%s/playing.bmp",getenv("TS_FX_PREVIEW"));screenshot(path);}
