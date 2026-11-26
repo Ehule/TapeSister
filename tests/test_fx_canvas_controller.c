@@ -596,6 +596,30 @@ int main(int argc,char **argv)
     snapshot_delivery();
     matrix_window.effect_open=c.effect[meta].id;
     for(int i=0;i<fx_canvas.count;++i)if(fx_canvas.node[i].row.kind==4 && fx_canvas.node[i].row.tile==c.effect[meta].id)fx_select(&fx_canvas.node[i],0);
+    if(argc==2 && !strcmp(argv[1],"--recall")) {
+        MatrixWindow *w=&matrix_window;
+        toolbar_click(FX_TOOL_ADD);
+        click(fx_canvas.popup_x+40,fx_canvas.popup_y+32+(TS_MATRIX_FX_RECALL-1)*30+10,1);
+        int slot=mx_effect_slot(),destination=TS_MATRIX_EFFECT_BASE+slot;
+        assert(slot>=0 && w->controls.effect[slot].type==TS_MATRIX_FX_RECALL);
+        mx_effect_paint();
+        SDL_Event press={0};press.type=SDL_MOUSEBUTTONDOWN;press.button.button=SDL_BUTTON_LEFT;
+        mx_effect_event(&press,0,&audio,&ui,&pages,&bank,290,708,0);
+        assert(!w->controls.effect[slot].enabled);
+        mx_effect_event(&press,0,&audio,&ui,&pages,&bank,290,708,0);
+        assert(w->controls.effect[slot].enabled);
+        TsSourceRoute *route=&pages.tracker.lanes[0].output_route;
+        *route=(TsSourceRoute){.mode=TS_SOURCE_INHERIT};
+        MatrixRow lane={.kind=0,.index=0};
+        int index=fx_source_at(lane);assert(index>=0);
+        mx_select(index,0);
+        fx_connect_selected(destination,0,&audio,&ui,&pages,&bank);
+        assert(!route->matrix_enabled && route->mode==TS_SOURCE_INHERIT && route->matrix_gain[destination]==1000);
+        assert(fx_visible_gain(lane,destination,&pages,&bank)==1000);
+        mx_toggle(0,&audio,&ui,&pages,&bank);
+        assert(!route->matrix_enabled && route->mode==TS_SOURCE_INHERIT && !route->matrix_gain[destination]);
+        goto finish;
+    }
     if(argc>1)screenshot(argv[1]);
     laptop_legibility(getenv("TS_FX_PREVIEW"),c.effect[meta].id);
     cable_drawing(getenv("TS_FX_PREVIEW"));
@@ -657,6 +681,7 @@ int main(int argc,char **argv)
     consolidate_and_arrange();context_actions();autopan_controller();edit_history_without_navigation();save_in_fx_canvas();
     new_effect_placement();
     key(SDLK_BACKQUOTE,KMOD_NONE);assert(!matrix_window.visible && ui.mosaic_open && !ui.tracker_open);
+finish:
     matrix_close();meta_fx_close();ts_sister_runtime_free(&audio.sister);ts_sample_pages_free(&pages);ts_instrument_free(&bank);SDL_DestroyWindow(main_window);SDL_Quit();
     puts("FX Canvas controller passed, including single-cable disconnect, alternative path, silent clear, undo and project recall.");return 0;
 }

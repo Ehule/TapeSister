@@ -1,3 +1,4 @@
+#include "tapesister/matrix_effects.h"
 #include "../third_party/tapehead/ft2_fasttracks_core.h"
 #include "tapesister/tracker_playback.h"
 
@@ -433,6 +434,8 @@ static void execute_lane(TsTrackerPlayback *rt, int i, uint32_t row)
             l->changed = 0; /* Explicit CUT is sharp; OFF and ordinary stops fade. */
         }
         else if (c->note_kind == TS_TRACKER_NOTE_PITCH) {
+            if(rt->recall && !rt->prepared->lanes[i].muted && (!rt->solo_mask || (rt->solo_mask&(1u<<i))))
+                ts_matrix_recall_note(rt->recall,&rt->prepared->lanes[i].output_route);
             const TsTrackerBinding *b = binding(rt->prepared, l->default_tile);
             if (!b) { stop_lane(l); rt->missing_mask |= (uint32_t)(1u << i); }
             else {
@@ -577,6 +580,8 @@ TsStereoFrame ts_tracker_playback_read(TsTrackerPlayback *rt, int rate)
         l->changed = 0;
         tails |= l->handoff.remaining != 0 || l->voice.active;
         value.l *= l->gain; value.r *= l->gain;
+        if(rt->recall && definition && active)
+            ts_matrix_recall_tracker_level(rt->recall,&definition->output_route,fmaxf(fabsf(value.l),fabsf(value.r)));
         output.l += value.l; output.r += value.r;
     }
     rt->tail_active = tails;

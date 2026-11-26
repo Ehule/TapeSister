@@ -191,6 +191,8 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
     if(!fx_graph_changed(pages,bank))return;
     ++fx_graph_cache.builds;w->dirty=1;
     fx_canvas.count=0;for(int d=0;d<TS_FX_DESTINATIONS;++d)fx_canvas.dest[d]=-1;
+    int show_tracker_sends=0;
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i)show_tracker_sends|=w->controls.effect[i].type==TS_MATRIX_FX_RECALL;
     /* Sources are endpoints, not copies of sample/generator editors. Ordinary
        tile/card/track membership remains represented by its source bus. */
     for(int i=0;i<w->count;++i) {
@@ -202,7 +204,9 @@ static void fx_build(TsSamplePages *pages,TsInstrument *bank)
         if(row.kind==2 && ts_matrix_input_pair(row.index)>=0) {
             keep=1; /* mx_rows already enumerated the physical/named input pairs. */
         }
-        if(!keep || (row.kind!=3 && raw.mode==TS_SOURCE_INHERIT && !raw.matrix_enabled))continue;
+        /* A new send must be patchable before a track owns any explicit audio routes. */
+        int recall_track=show_tracker_sends && row.kind==0;
+        if(!recall_track && (!keep || (row.kind!=3 && raw.mode==TS_SOURCE_INHERIT && !raw.matrix_enabled)))continue;
         FxCanvasNode *n=&fx_canvas.node[fx_canvas.count++];*n=(FxCanvasNode){.row=row,.at=i,.destination=-1,.scale=1};
         TsSourceRoute route=mx_display_route(raw);
         for(int d=0;d<TS_MATRIX_DESTINATIONS;++d)wanted[d]|=route.matrix_gain[d]!=0;
@@ -396,7 +400,8 @@ static uint32_t fx_color(int type)
         TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA4,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA5,TS_COLOR_DATA5,TS_COLOR_DATA3,TS_COLOR_DATA2};
     static const uint32_t colors[]={0xffc9b3d4u,0xff9ed2b2u,0xffe6c17du,0xffe5b36bu,
         0xffb990c6u,0xff95c6dfu,0xffc294d2u,0xff9fcea7u,0xffb6d38du,0xffd19ebdu,0xffc499c9u,0xff9ed2b2u,0xffc499c9u,0xffc9a0e6u,0xffbba8dcu,0xff6ed7bdu};
-    type=SDL_clamp(type,0,TS_MATRIX_FX_TYPES-1);
+    if(type==TS_MATRIX_FX_RECALL)return FX_CABLE;
+    type=SDL_clamp(type,0,(int)SDL_arraysize(roles)-1);
     return FX_THEME(roles[type],colors[type]);
 }
 static uint32_t fx_source_color(MatrixRow row)
@@ -739,6 +744,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             if(c && c->type==TS_MATRIX_FX_MODULATOR)detail="CONTROL / DOUBLE-CLICK TO EDIT";
             const char *title=c && c->type==TS_MATRIX_FX_SUNVOX?ts_sunvox_name(&c->sunvox):c && c->type==TS_MATRIX_FX_META?c->meta.name:n->row.name;
             char compact[48];
+            if(c && c->type==TS_MATRIX_FX_RECALL)detail="HIT + LEVEL / OSC";
             if(c)snprintf(compact,sizeof(compact),"%s %u",ts_matrix_effect_short_name(c->type),(unsigned)c->id);
             else if(n->row.kind==2 && n->row.index==TS_MATRIX_TRACKER)snprintf(compact,sizeof(compact),"TRK BUS");
             else if(n->row.kind==2 && n->row.index==TS_MATRIX_LINK)snprintf(compact,sizeof(compact),"LIVE LINK");
@@ -764,7 +770,7 @@ static void fx_paint(AudioState *audio,TsSamplePages *pages,TsInstrument *bank)
             float middle=fx_yf(n->y+fx_node_h(n)*.5f);
             int modulation=c && c->type==TS_MATRIX_FX_MODULATOR;
             if(n->destination>=0 && !modulation)fx_draw_port(l,middle,color,FX_PORT_AUDIO);
-            if(n->at>=0)fx_draw_port(r,middle,color,modulation?FX_PORT_MODULATION:FX_PORT_AUDIO);
+            if(n->at>=0 && (!c || c->type!=TS_MATRIX_FX_RECALL))fx_draw_port(r,middle,color,modulation?FX_PORT_MODULATION:FX_PORT_AUDIO);
             int sc=n->destination>=0?ts_matrix_sidechain_for(n->destination):-1;
             if(sc>=0 && ts_matrix_destination_active(&w->controls,sc))
                 fx_draw_port(l,fx_yf(n->y+fx_node_h(n)*.8f),color,FX_PORT_SIDECHAIN);

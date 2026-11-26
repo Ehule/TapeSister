@@ -723,6 +723,10 @@ void triggerNote(uint8_t note, uint8_t efx, uint8_t efxData, channel_t *ch)
 	if (note >= 10*12) // unsigned check (also handles note < 0)
 		return;
 
+#ifdef TAPEHEAD_EMBEDDED
+    if(!tapeheadPatternContext && !ch->channelOff)
+        ts_tapehead_recall_note(channelIndex);
+#endif
 	ch->oldVol = s->volume;
 	ch->oldPan = s->panning;
 

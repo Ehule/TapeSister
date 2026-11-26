@@ -843,6 +843,34 @@ fade_voice:
 		mixFuncTab[mixOffsetBias + r->mixFuncOffset](r, bufferPosition, samplesToMix);
 }
 
+/* Conventional XM samples mix directly into the shared bus. Measure the
+   lane's contribution only when its visual send is patched. Host tile
+   samples already publish their own meter before audible routing. */
+static void mixTrackPair(unsigned lane,voice_t *v,voice_t *r,int offset,int count,int bias)
+{
+#ifdef TAPEHEAD_EMBEDDED
+    if((v->active || r->active) && (!v->active || !v->tileData) && (!r->active || !r->tileData) && ts_tapehead_recall_lane(lane)) {
+        float peak=0;
+        while(count>0) {
+            float left[64],right[64];
+            int n=count<64?count:64;
+            memcpy(left,audio.fMixBufferL+offset,n*sizeof(float));
+            memcpy(right,audio.fMixBufferR+offset,n*sizeof(float));
+            mixVoicePair(v,r,offset,n,bias);
+            for(int j=0;j<n;++j) {
+                peak=fmaxf(peak,fabsf(audio.fMixBufferL[offset+j]-left[j]));
+                peak=fmaxf(peak,fabsf(audio.fMixBufferR[offset+j]-right[j]));
+            }
+            offset+=n;count-=n;
+        }
+        ts_tapehead_recall_level(lane,peak);return;
+    }
+#else
+    (void)lane;
+#endif
+    mixVoicePair(v,r,offset,count,bias);
+}
+
 static void mixSampleLauncherVoice(voice_t *v, int32_t bufferPosition,
 	int32_t samplesToMix)
 {
@@ -987,7 +1015,7 @@ static void doChannelMixing(int32_t bufferPosition, int32_t samplesToMix,
 
 			audio.fMixBufferL = monoBuffer;
 			audio.fMixBufferR = monoBuffer;
-			mixVoicePair(v, r, bufferPosition, samplesToMix, mixOffsetBias);
+			mixTrackPair(i, v, r, bufferPosition, samplesToMix, mixOffsetBias);
 			continue;
 		}
 
@@ -1020,7 +1048,7 @@ static void doChannelMixing(int32_t bufferPosition, int32_t samplesToMix,
 
 			audio.fMixBufferL = audio.fBusMixBufferL[outputBus];
 			audio.fMixBufferR = audio.fBusMixBufferR[outputBus];
-			mixVoicePair(v, r, bufferPosition, samplesToMix, mixOffsetBias);
+			mixTrackPair(i, v, r, bufferPosition, samplesToMix, mixOffsetBias);
 		}
 		else
 		{
@@ -1036,7 +1064,7 @@ static void doChannelMixing(int32_t bufferPosition, int32_t samplesToMix,
 
 			audio.fMixBufferL = audio.fChannelMixBufferL;
 			audio.fMixBufferR = audio.fChannelMixBufferR;
-			mixVoicePair(v, r, bufferPosition, samplesToMix, mixOffsetBias);
+			mixTrackPair(i, v, r, bufferPosition, samplesToMix, mixOffsetBias);
 
 			for (uint8_t bus = 0; bus < outputBusCount; bus++)
 			{

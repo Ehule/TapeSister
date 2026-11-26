@@ -292,7 +292,12 @@ static int mx_legacy_direct(TsSourceRoute r)
     return left<0 || left>=TS_MATRIX_OUTPUTS*2 ||
         (r.mode==TS_SOURCE_PAIR && ((left&1) || right!=left+1));
 }
-static TsSourceRoute mx_display_route(TsSourceRoute raw)
+static int mx_recall_destination(int destination)
+{
+    int slot=ts_matrix_effect_index(destination);
+    return slot>=0 && matrix_window.controls.effect[slot].type==TS_MATRIX_FX_RECALL;
+}
+static TsSourceRoute mx_audio_display_route(TsSourceRoute raw)
 {
     if(raw.matrix_enabled || raw.mode==TS_SOURCE_MAIN || raw.mode==TS_SOURCE_INHERIT)return ts_matrix_source_route(raw);
     if(raw.mix_enabled && matrix_window.legacy.master_mix) {
@@ -305,6 +310,18 @@ static TsSourceRoute mx_display_route(TsSourceRoute raw)
         raw.second=matrix_window.array.output[raw.second];
     }
     return ts_matrix_source_route(raw);
+}
+/* A tracker send can coexist with inherited tile or bus audio. Its gain is
+   stored in the existing serialized destination entry, even in that mode. */
+static TsSourceRoute mx_display_route(TsSourceRoute raw)
+{
+    if(raw.matrix_enabled)return raw;
+    TsSourceRoute display=mx_audio_display_route(raw);
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        int d=TS_MATRIX_EFFECT_BASE+i;
+        if(raw.matrix_gain[d] && mx_recall_destination(d))display.matrix_gain[d]=raw.matrix_gain[d];
+    }
+    return display;
 }
 static void matrix_hide(void)
 {
@@ -655,7 +672,8 @@ static void mx_bulk(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
     int count=0;
     for(int i=0;i<w->count;++i)if(mx_chosen(i)) {
         TsSourceRoute raw=mx_route(w->rows[i],pages,bank);++count;
-        if(raw.mode==TS_SOURCE_INHERIT || mx_legacy_direct(raw)) {
+        int visual=!pan && w->rows[i].kind==0 && mx_recall_destination(w->destination);
+        if(!visual && (raw.mode==TS_SOURCE_INHERIT || mx_legacy_direct(raw))) {
             snprintf(w->status,sizeof(w->status),"NO CHANGES: SELECTION INCLUDES INHERITED/LEGACY ROWS. CONVERT THOSE ROWS FIRST.");return;
         }
         if((w->rows[i].kind==2 || w->rows[i].kind==4) && !pan && ts_matrix_connect(&next,w->rows[i].index,w->destination,SDL_clamp(value,0,2000))<=0) {
@@ -668,6 +686,13 @@ static void mx_bulk(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,TsS
     for(int i=0;i<w->count;++i)if(mx_chosen(i)) {
         MatrixRow row=w->rows[i];TsSourceRoute raw=mx_route(row,pages,bank),r=mx_display_route(raw);
         if(mx_uses_bus(row,raw))r=pan?raw:(TsSourceRoute){.matrix_enabled=1,.pan=raw.pan,.width=raw.width};
+        if(row.kind==0 && !raw.matrix_enabled) {
+            if(!pan && mx_recall_destination(w->destination))r=raw;
+            else for(int slot=0;slot<TS_MATRIX_EFFECT_CAPACITY;++slot) {
+                int d=TS_MATRIX_EFFECT_BASE+slot;
+                if(mx_recall_destination(d))r.matrix_gain[d]=raw.matrix_gain[d];
+            }
+        }
         if(pan)r.pan=SDL_clamp(value,-100,100);else r.matrix_gain[w->destination]=SDL_clamp(value,0,2000);
         if((row.kind==2 || row.kind==4)){if(pan)next.row[row.index].pan=r.pan;}
         else if(row.kind==0)pages->tracker.lanes[row.index].output_route=r;
@@ -687,7 +712,9 @@ static void mx_toggle(SDL_AudioDeviceID device,AudioState *audio,TsUiState *ui,T
     MatrixWindow *w=&matrix_window;int all=1;
     for(int i=0;i<w->count;++i)if(mx_chosen(i)) {
         TsSourceRoute raw=mx_route(w->rows[i],pages,bank);
-        all&=!mx_uses_bus(w->rows[i],raw) && mx_display_route(raw).matrix_gain[w->destination]!=0;
+        if(w->rows[i].kind==0 && mx_recall_destination(w->destination))
+            all&=raw.matrix_gain[w->destination]!=0;
+        else all&=!mx_uses_bus(w->rows[i],raw) && mx_display_route(raw).matrix_gain[w->destination]!=0;
     }
     mx_gain(device,audio,ui,pages,bank,all?0:1000);
 }

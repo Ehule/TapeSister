@@ -61,6 +61,7 @@ typedef struct {
 } TsTrackerBlock;
 
 typedef struct {
+    struct TsMatrixEffects *recall; /* Scoped to a live audio callback. */
     TsTrackerPrepared *prepared;
     TsTrackerSource *sources; /* Control-thread cache, never traversed by audio. */
     TsTrackerLanePlayback lanes[TS_TRACKER_LANES];
