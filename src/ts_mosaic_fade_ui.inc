@@ -103,20 +103,24 @@ static void mosaic_fade_shape(const MosaicFadeSurface *s,const TsMosaicEvent *e,
     if(in==0 && out==0)return;
     int first=(int)fmax(s->top,fmin(s->bottom,(double)y)),last=(int)fmax(s->top,fmin(s->bottom,(double)bottom));
     int a=(int)fmax(s->left,fmin(s->right,(double)x)),b=(int)fmax(s->left,fmin(s->right,(double)right));
-    int line=(int)fmax(1,round(s->sx));
     for(int yy=first;yy<last;++yy) {
         double elapsed=(yy-y)/s->rate,gain=1;
         if(in>0)gain=fmin(gain,elapsed/in);
         if(out>0)gain=fmin(gain,(e->duration-elapsed)/out);
         if(gain>=1)continue;
         gain=fmax(0,gain);
-        int64_t edge=x+(int64_t)floor((right-x-1)*gain+.5);
-        int shade=(int)fmax(a,fmin(b,(double)edge));
+        double offset=(right-x-1)*gain;
+        int64_t step=(int64_t)offset,edge=x+step;
+        float fraction=(float)(offset-step);
+        int shade=(int)fmax(a,fmin(b,(double)edge+1));
+        uint32_t *row=s->pixels+(size_t)yy*s->stride;
         for(int xx=shade;xx<b;++xx) {
-            uint32_t *p=&s->pixels[(size_t)yy*s->stride+xx];
-            *p=0xff000000u|((*p&0x00fefefeu)>>1);
+            uint32_t pixel=row[xx];
+            row[xx]=0xff000000u|(((pixel&0x00fefefeu)>>1)+((pixel&0x00fcfcfcu)>>2));
         }
-        mosaic_fade_rect(s,edge,yy,(int64_t)fmin(right,edge+line),yy+1,ink);
+        /* Split the hairline across the two columns it covers. */
+        if(edge>=a && edge<b)row[edge]=mosaic_mix_color(ink,row[edge],fraction);
+        if(fraction>0 && edge+1>=a && edge+1<b)row[edge+1]=mosaic_mix_color(row[edge+1],ink,fraction);
     }
 }
 static void mosaic_fade_handles(const MosaicFadeSurface *s,const TsUiState *ui,const TsMosaicEvent *e,

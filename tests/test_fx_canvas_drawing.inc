@@ -41,6 +41,22 @@ static void cable_drawing(const char *dir)
             assert((core || line==4) && (edge || line==2 || line==3));
             for(int y=0;y<w->pixel_h;++y)assert(fx_stroke.left[y]==w->pixel_w && fx_stroke.right[y]==0);
         }
+        /* Check small, distinct port silhouettes at each drawable density. */
+        memset(w->pixels,0,count*sizeof(*w->pixels));
+        int unit=(int)lroundf(fx_stroke.scale);
+        for(int kind=FX_PORT_AUDIO;kind<=FX_PORT_MODULATION;++kind) {
+            int radius=unit*(kind==FX_PORT_AUDIO && w->layout->canvas_zoom<.45f?1:2);
+            float x=180.25f+60*kind,y=240.5f;
+            fx_draw_port(x,y,0xffffffff,(FxPortShape)kind);
+            FxPoint center=fx_device_point((FxPoint){x,y});
+            int cx=(int)lroundf(center.x),cy=(int)lroundf(center.y);
+            assert(w->pixels[(size_t)(cy-radius)*w->pixel_w+cx]);
+            assert(w->pixels[(size_t)cy*w->pixel_w+cx+radius]);
+            assert(!w->pixels[(size_t)cy*w->pixel_w+cx+radius+1]);
+            assert(!!w->pixels[(size_t)(cy-radius)*w->pixel_w+cx+radius]==(kind==FX_PORT_AUDIO));
+            if(radius>=2)
+                assert(!!w->pixels[(size_t)(cy-1)*w->pixel_w+cx-1]==(kind!=FX_PORT_MODULATION));
+        }
         /* The same curve drives rasterization, clicks and wire marquee. */
         w->layout->canvas_straight=0;
         const float curves[][4]={{100.25f,180.4f,850.8f,610.25f},{800,160,140,620},{400,200,400,650},{500,350,350,350}};

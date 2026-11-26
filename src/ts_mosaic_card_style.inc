@@ -14,8 +14,8 @@ static MosaicCardStyle mosaic_card_style(const TsUiState *ui,const TsMosaicEvent
     s.margin=s.compact?3:6;
     double reserve=s.focused && height>=14 && width>=24?22:s.margin;
     s.chars=(int)fmax(0,fmin(63,floor((width-s.margin-reserve+1)/6)));
-    if(height<(s.compact?10:14))s.chars=0;
-    s.header=s.compact?(s.chars?11:2):24;
+    if(height<(s.compact?10:14) || (!s.focused && (height<12 || width<44)))s.chars=0;
+    s.header=s.compact?(s.chars?11:1):24;
     s.footer=s.compact?2:14;
     return s;
 }
