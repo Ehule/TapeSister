@@ -94,7 +94,7 @@ static void mx_effect_paint(void)
     if(w->effect_progress<1 && c->type!=TS_SISTER_FX_TRANSIENT){mx_rect(630,715,240,3,MX_DIM);mx_rect(630,715,(int)(240*w->effect_progress),3,MX_AMBER);}
     if(c->type==TS_MATRIX_FX_RECALL) {
         mx_text(32,749,"MATCH THIS CARD NUMBER ON A TAPESISTER IN NODE IN HOSTILE RECALL.",MX_TEXT,1);
-        mx_text(32,779,"TRACKER NOTES DRIVE HIT. INPUT AMPLITUDE DRIVES LEVEL.",MX_DIM,1);
+        mx_text(32,779,"TRACKER / MOSAIC STARTS AND AUDIO ONSETS DRIVE HIT. AMPLITUDE DRIVES LEVEL.",MX_DIM,1);
         return;
     }
     int count=mx_effect_controls(c),width=1204/count;

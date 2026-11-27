@@ -1353,3 +1353,7 @@ if(TAPESISTER_BUILD_SDL)
   set_tests_properties(tapesister_credits_tests PROPERTIES
     TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
+
+add_executable(tapesister_recall_audio_tests tests/test_recall_audio.c)
+target_link_libraries(tapesister_recall_audio_tests PRIVATE tapesister_core)
+add_test(NAME tapesister_recall_audio_tests COMMAND tapesister_recall_audio_tests)

@@ -1,6 +1,7 @@
 #include "tapesister/mosaic.h"
 #include "tapesister/audio_assets.h"
 #include "tapesister/master_eq.h"
+#include "tapesister/matrix_effects.h"
 #include <errno.h>
 #include <math.h>
 #include <stddef.h>
@@ -8,6 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ts_mosaic_pitch.inc"
+
+/* The host brackets Mosaic/Gallery rendering on the audio thread. No retained
+   engine pointer in saved canvases, and independent offline workers stay local. */
+static _Thread_local TsMatrixEffects *recall_capture;
+void ts_mosaic_recall_capture(TsMatrixEffects *effects){recall_capture=effects;}
 
 int ts_mosaic_grid_valid(TsMosaicGrid g)
 {return (g.enabled==0 || g.enabled==1) && g.unit>=0 && g.unit<=2 && g.division>=1 && g.division<=64;}
@@ -511,8 +517,11 @@ static TsStereoFrame mosaic_event_read(void *pattern_engine,const TsMosaicEvent 
     int rate,double speed,float level,int audible,TsSourceRouteMix *routes,uint64_t serial)
 {
     if(!v->active || v->id!=e->id || v->revision!=e->revision || v->start!=e->start) {
+        int entering=!v->active || v->id!=e->id || v->start!=e->start;
         voice_begin(v,e,fmax(0,time-e->start),rate);
         v->audible_gain=audible?1.0f:0.0f;
+        if(entering && audible && level>0 && e->gain>0 && routes)
+            ts_matrix_recall_note(recall_capture,&e->output_route);
     }
     if(e->source->pattern && v->pattern_source!=e->source && e->looping && time-e->start+1e-9>=v->pattern_switch){
         v->pattern_source=e->source;v->pattern_origin=v->pattern_switch;
