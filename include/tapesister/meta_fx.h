@@ -46,5 +46,8 @@ void ts_meta_free(TsMetaEngine *);
 void ts_meta_set(TsMetaEngine *, const TsMetaControls *);
 int ts_meta_topology_matches(const TsMetaEngine *, const TsMetaControls *);
 TsStereoFrame ts_meta_process(TsMetaEngine *, TsStereoFrame);
+/* Same chronology and control-rate refresh as the scalar path. Input and
+   output may alias; bounded scratch storage, no allocation in processing. */
+void ts_meta_process_span(TsMetaEngine *, const TsStereoFrame *, TsStereoFrame *, unsigned);
 size_t ts_meta_memory(const TsMetaEngine *);
 #endif

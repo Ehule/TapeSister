@@ -65,6 +65,7 @@ static int live_fixture(const char *path)
     TsMosaic *root=ts_sample_pages_mosaic_root(&pages);ts_sample_pages_free(&pages);ts_mosaic_free(root);
     ts_instrument_free(&bank);return 0;
 }
+#include "test_gallery_stress_diagnostic.inc"
 int main(int argc,char **argv)
 {
     if(argc==3 && !strcmp(argv[1],"--make-fixture"))return live_fixture(argv[2]);
@@ -244,6 +245,7 @@ int main(int argc,char **argv)
     assert(live_test.state==LT_DONE && !u.mosaic->playing && !ts_profile_enabled());
     assert(pages.gallery->canvas[0].scene->events[0].muted && pages.gallery->canvas[1].scene->events[0].solo);
     assert(!a.sister.matrix.controls.enabled && pages.gallery->canvas[2].scene->speed==.75);
+    test_gallery_stress_diagnostic(window);
     /* Loading another project discards the old schedule and save guard, even
        when diagnostics are switched off or the next Gallery is unavailable. */
     u.config.diagnostic_live_test=0;live_test_loaded(0,&a,&u,&pages,"another.tsr");

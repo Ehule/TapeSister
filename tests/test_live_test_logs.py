@@ -15,14 +15,274 @@ def fixture():
         {"type": "live_test_start", "t_ms": 100, "detail": "scenario=tree04-live-v1 steps=1 project_hash=abc backend=dummy rate=48000 frames=512 channels=4 workers=0 profile=0"},
         {"type": "live_test_checkpoint", "t_ms": 101, "detail": "generation=1 callbacks=100 frames=51200 over_budget=40"},
         {"type": "live_test_action_begin", "t_ms": 102, "detail": "index=0 action=finish target=0 value=0.000000 planned_ms=0 actual_ms=2 late_ms=2"},
-        {"type": "audio_window", "t_ms": 200, "from_ms": 150, "peak_ms": 12, "over_budget": 2},
+        {"type": "audio_window", "t_ms": 185, "from_ms": 150, "peak_ms": 12, "over_budget": 2},
         {"type": "live_test_action_end", "t_ms": 201, "detail": "index=0 success=1 duration_ms=3"},
         {"type": "live_test_checkpoint", "t_ms": 202, "detail": "generation=1 callbacks=110 frames=56320 over_budget=42"},
         {"type": "live_test_complete", "t_ms": 203, "detail": "reason=finished"},
     ]
 
 
+def stress_fixture():
+    rows = []
+    for job, stage in enumerate(("full_pass", "dense_closed", "dense_open", "dense_overlap", "short_overlap", "recovery")):
+        for state, advance in (("begin", 0), ("end", 10)):
+            calls = 100 + job * 20 + advance
+            rows.append({"type": "live_test_stage", "t_ms": job * 100 + advance,
+                         "detail": f"stage={stage} state={state} job={job} movement={-1 if job == 0 else 0} profile={int(job != 0)} callbacks={calls} frames={calls * 512} over_budget=0 near_budget=0 start_gaps=0"})
+    for serial, (job, stage) in enumerate(((0, "full_pass"), (3, "dense_overlap"), (4, "short_overlap")), 1):
+        rows.append({"type": "live_test_transition", "t_ms": job * 100 + 9,
+                     "detail": f"transition={serial} job={job} stage={stage} from=0 to=0 from_id=42 to_id=42 requested_fade_s=.001 effective_fade_s=.001 dual_frames=48 progress_frames=48 completed=1 retired_reason=completed from_start_s=.009 from_end_s=.01 to_start_s=0 to_end_s=.001"})
+    rows.append({"type": "live_test_coverage", "t_ms": 600,
+                 "detail": "planned_transitions=3 observed_transitions=3 completed_transitions=3 interrupted_transitions=0 full_movements_expected=1 full_movements_completed=1 missing_sources=0 trace_overflow=0 coverage_complete=1 workload=content alignment_available=0 alignment_verified=0 alignment_reason=native_section_limits"})
+    rows.append({"type": "live_test_complete", "t_ms": 601})
+    return sorted(rows, key=lambda row: row["t_ms"])
+
+
+class BackendHealth(unittest.TestCase):
+    @staticmethod
+    def sample(t_ms, callbacks, generation=1, kind=1, driver=0, lock_skips=0, recoveries=0, worker_gaps=0):
+        return {"type": "health_sample", "t_ms": t_ms,
+                "detail": f"generation={generation} callbacks={callbacks} backend_counter_kind={kind} "
+                          f"driver={driver} lock_skips={lock_skips} recoveries={recoveries} worker_gaps={worker_gaps} "
+                          "max_hold_ms=999 max_ui_wait_ms=999 holds_over_buffer=999"}
+
+    def report(self, health_rows, overruns=0):
+        rows = fixture()
+        rows[4].update(peak_ms=5, over_budget=overruns)
+        rows[6]["detail"] = rows[6]["detail"].replace("over_budget=42", f"over_budget={40 + overruns}")
+        # Samples are intentionally drained after the completion record.
+        rows.extend(health_rows)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "health.jsonl"
+            path.write_text("\n".join(map(json.dumps, rows)), encoding="utf-8")
+            return module.report([path])["runs"][0]
+
+    def test_only_in_run_counter_differences_and_explicit_boundary_gaps(self):
+        result = self.report([
+            self.sample(90, 10, driver=50, lock_skips=900, recoveries=500, worker_gaps=20),
+            self.sample(110, 101, driver=7, lock_skips=3, recoveries=4, worker_gaps=2),
+            self.sample(190, 109, driver=7, lock_skips=5, recoveries=2414, worker_gaps=2),
+            self.sample(210, 111, driver=100, lock_skips=950, recoveries=9000, worker_gaps=50),
+        ])
+        health = result["backend_health"]
+        self.assertEqual(health["counter_deltas"], {"driver": 0, "lock_skips": 2, "recoveries": 2410, "worker_gaps": 0})
+        self.assertEqual(health["samples"], 2)
+        self.assertEqual((health["requested_from_ms"], health["requested_to_ms"]), (101, 202))
+        self.assertEqual(health["unobserved_intervals"], [{"from_ms": 101, "to_ms": 110}, {"from_ms": 190, "to_ms": 202}])
+        self.assertEqual((health["intervals"][0]["from_ms"], health["intervals"][0]["to_ms"]), (110, 190))
+        self.assertNotIn("max_hold_ms", json.dumps(health))
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["deadline_status"], "no_recorded_deadline_misses")
+        self.assertEqual(result["performance_status"], "performance_events_observed")
+        self.assertEqual(result["performance_observations"], ["backend_control_skips"])
+
+    def test_driver_reports_worker_gaps_and_recoveries_keep_separate_meanings(self):
+        for kind, key, expected in ((1, "driver", "backend_driver_reports"),
+                                    (2, "worker_gaps", "backend_worker_gaps"),
+                                    (1, "recoveries", None)):
+            with self.subTest(counter=key):
+                result = self.report([self.sample(110, 101, kind=kind),
+                                      self.sample(190, 109, kind=kind, **{key: 3})])
+                self.assertEqual(result["backend_health"]["counter_deltas"][key], 3)
+                self.assertEqual(result["deadline_status"], "no_recorded_deadline_misses")
+                self.assertEqual(result["performance_observations"], [expected] if expected else [])
+                self.assertEqual(result["performance_status"], "performance_events_observed" if expected
+                                 else "no_recorded_performance_events_in_observed_intervals")
+
+    def test_absent_single_and_unsupported_samples_are_unavailable_not_zero(self):
+        for rows in ([], [self.sample(110, 101)],
+                     [self.sample(110, 101, kind=0), self.sample(190, 109, kind=0)]):
+            with self.subTest(samples=len(rows)):
+                result = self.report(rows)
+                health = result["backend_health"]
+                self.assertEqual(health["status"], "unavailable")
+                self.assertTrue(all(v is None for v in health["counter_deltas"].values()))
+                self.assertEqual(health["unobserved_intervals"], [{"from_ms": 101, "to_ms": 202}])
+                self.assertTrue(result["complete"])
+                self.assertEqual(result["deadline_status"], "no_recorded_deadline_misses")
+                self.assertEqual(result["performance_status"], "insufficient_backend_observations")
+        self.assertEqual(self.report([], overruns=2)["performance_status"], "performance_events_observed")
+
+    def test_generation_or_backend_change_never_bridges_counter_baselines(self):
+        for change, reason in (({"generation": 2}, "generation_changed"), ({"kind": 2}, "backend_changed")):
+            with self.subTest(change=reason):
+                rows = [self.sample(110, 101, driver=7), self.sample(130, 103, driver=8),
+                        self.sample(150, 105, driver=50, **change), self.sample(190, 109, driver=52, **change)]
+                health = self.report(rows)["backend_health"]
+                self.assertEqual(health["counter_deltas"]["driver"], 3)
+                self.assertEqual(len(health["intervals"]), 2)
+                self.assertIn(reason, health["discontinuities"][0]["reasons"])
+                self.assertIn({"from_ms": 130, "to_ms": 150}, health["unobserved_intervals"])
+
+    def test_midrun_counter_resets_are_detected_even_if_final_total_is_higher(self):
+        for key in ("driver", "lock_skips", "recoveries", "worker_gaps", "callbacks"):
+            with self.subTest(counter=key):
+                rows = [self.sample(t, c, **({key: v} if key != "callbacks" else {}))
+                        for t, c, v in ((110, 101, 3), (130, 103, 5), (150, 105, 1), (190, 109, 10))]
+                if key == "callbacks":
+                    rows[2]["detail"] = rows[2]["detail"].replace("callbacks=105", "callbacks=1")
+                health = self.report(rows)["backend_health"]
+                self.assertEqual(len(health["intervals"]), 2)
+                self.assertIn("counter_reset", health["discontinuities"][0]["reasons"])
+                if key != "callbacks":
+                    self.assertEqual(health["counter_deltas"][key], 11)
+
+    def test_invalid_or_duplicate_time_samples_break_observation_continuity(self):
+        for mutation in ("missing", "negative", "invalid", "time"):
+            with self.subTest(mutation=mutation):
+                rows = [self.sample(t, c) for t, c in ((110, 101), (130, 103), (150, 105), (170, 107), (190, 109))]
+                if mutation == "time":
+                    rows[2]["t_ms"] = 130
+                else:
+                    replacement = {"missing": "", "negative": "lock_skips=-1", "invalid": "lock_skips=unknown"}[mutation]
+                    rows[2]["detail"] = rows[2]["detail"].replace("lock_skips=0", replacement)
+                result = self.report(rows)
+                health = result["backend_health"]
+                self.assertEqual(len(health["intervals"]), 2)
+                self.assertTrue(health["discontinuities"])
+                self.assertEqual(health["counter_deltas"]["lock_skips"], 0)
+                self.assertEqual(result["performance_status"], "insufficient_backend_observations")
+
+
 class Comparison(unittest.TestCase):
+    def test_density_alignment_requires_simultaneous_rendered_peaks(self):
+        proof = ("job=6 method=peak_midpoints from=0 to=1 from_id=42 to_id=77 "
+                 "from_point_s=20.05 to_point_s=40.05 from_density_start_s=20 from_density_end_s=20.1 "
+                 "to_density_start_s=40 to_density_end_s=40.1 from_in_s=14.05 from_out_s=22.05 "
+                 "to_in_s=39.05 to_out_s=43.05 from_speed=1 to_speed=.5 fade_s=4 phase_s=2")
+        trace = {"job": "6", "stage": "aligned_overlap", "from": "0", "to": "1",
+                 "from_id": "42", "to_id": "77", "completed": "1", "retired_reason": "completed",
+                 "effective_fade_s": "4", "from_start_s": "18.05", "from_end_s": "22.05",
+                 "to_start_s": "39.05", "to_end_s": "41.05", "progress_frames": "192000",
+                 "common_density_frames": "4800", "density_witness_frame": "96000"}
+        movements = [{"movement": 0, "id": "42", "length_seconds": 60, "inventory": {"speed": "1"}},
+                     {"movement": 1, "id": "77", "length_seconds": 60, "inventory": {"speed": ".5"}}]
+        stages = [{"job": "6", "stage": "aligned_overlap", "complete": True}]
+        summary = {"alignment_available": "1", "alignment_verified": "1", "alignment_reason": "available"}
+        def check(text, traces):
+            rows = [{"type": "live_test_start", "detail": "rate=48000"},
+                    {"type": "live_test_alignment", "detail": text}]
+            return module.density_alignment(rows, stages, movements, traces, summary)
+        result = check(proof, [trace])
+        self.assertTrue(result["verified"], result["problems"])
+        rounded = dict(trace, effective_fade_s="3.99998", from_start_s="18.05002")
+        self.assertTrue(check(proof, [rounded])["verified"])
+        self.assertFalse(check(proof, [dict(trace, effective_fade_s="3.99")])["verified"])
+        self.assertFalse(check(proof, [dict(trace, common_density_frames="0")])["verified"])
+        self.assertFalse(check(proof, [dict(trace, density_witness_frame="0")])["verified"])
+        # Original 12-second outgoing window faded six seconds after its peak.
+        late = dict(trace, from_start_s="26.05", from_end_s="30.05")
+        self.assertIn("density_point_outside_rendered_overlap", check(proof, [late])["problems"])
+        unsynchronized = dict(trace, to_start_s="38.05", to_end_s="40.05")
+        self.assertIn("density_points_not_simultaneous", check(proof, [unsynchronized])["problems"])
+        for changed in (proof.replace("to_speed=.5", "to_speed=1"),
+                        proof.replace("from_id=42", "from_id=99"),
+                        proof.replace("from_point_s=20.05", "from_point_s=nan"),
+                        proof.replace("from_density_end_s=20.1", "from_density_end_s=20.01")):
+            self.assertFalse(check(changed, [trace])["verified"])
+        self.assertFalse(check(proof, [])["verified"])
+        self.assertFalse(check(proof, [trace, trace])["verified"])
+
+    def test_unavailable_density_alignment_is_explicit(self):
+        summary = {"alignment_available": "0", "alignment_verified": "0", "alignment_reason": "native_section_limits"}
+        result = module.density_alignment([], [], [], [], summary)
+        self.assertFalse(result["available"])
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["reason"], "native_section_limits")
+        self.assertEqual(result["problems"], [])
+        self.assertIn("missing_density_alignment_status", module.density_alignment([], [], [], [], {})["problems"])
+
+    def test_short_crossfade_coverage_needs_audio_progress_not_windows(self):
+        rows = stress_fixture()
+        movements = [{"movement": 0, "id": "42", "length_seconds": .01}]
+        stages = module.stage_usage(rows, [])
+        self.assertEqual(len(stages), 6)
+        self.assertTrue(all(s["complete"] and s["counter_deltas"]["callbacks"] == 10 for s in stages))
+        self.assertTrue(all(s["average_callback_ms"] is None for s in stages))
+        coverage = module.stress_coverage(rows, stages, movements)
+        self.assertTrue(coverage["complete"], coverage["problems"])
+        for row in rows:
+            if row["type"] == "live_test_transition":
+                row["detail"] = row["detail"].replace("progress_frames=48", "progress_frames=0")
+                break
+        coverage = module.stress_coverage(rows, stages, movements)
+        self.assertFalse(coverage["complete"])
+        self.assertIn("transition_without_dual_scene_progress", coverage["problems"])
+
+    def test_stress_rejects_missing_duplicate_or_incomplete_evidence(self):
+        movements = [{"movement": 0, "id": "42", "length_seconds": .01}]
+        for mutation in ("missing_counter", "duplicate_begin", "orphan_end", "short_full_pass", "missing_source", "trace_overflow", "missing_inventory"):
+            with self.subTest(mutation=mutation):
+                rows = stress_fixture()
+                if mutation == "missing_counter":
+                    rows[0]["detail"] = rows[0]["detail"].replace("frames=51200", "")
+                elif mutation == "duplicate_begin":
+                    rows.append(dict(rows[0]))
+                elif mutation == "orphan_end":
+                    rows = rows[1:]
+                elif mutation == "short_full_pass":
+                    for row in rows:
+                        if row["type"] == "live_test_transition" and "stage=full_pass" in row["detail"]:
+                            row["detail"] = row["detail"].replace("from_end_s=.01", "from_end_s=.005")
+                elif mutation in ("missing_source", "trace_overflow"):
+                    key = "missing_sources" if mutation == "missing_source" else "trace_overflow"
+                    rows[-2]["detail"] = rows[-2]["detail"].replace(f"{key}=0", f"{key}=1")
+                inventory = [] if mutation == "missing_inventory" else movements
+                rows.sort(key=lambda row: row["t_ms"])
+                coverage = module.stress_coverage(rows, module.stage_usage(rows, []), inventory)
+                self.assertFalse(coverage["complete"], mutation)
+
+    def test_asynchronously_drained_audio_is_attributed_by_timestamp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "drained.jsonl"
+            rows = fixture()
+            window = rows.pop(4)
+            rows.append(window)  # Writer drains this after the completion marker.
+            rows.append({"type": "audio_timing", "t_ms": 185, "duration_ms": 14,
+                         "budget_ms": 10.666667, "over_budget": True,
+                         "extra_start_gap_ms": 3})
+            rows.append({"type": "audio_timing", "t_ms": 90, "duration_ms": 999,
+                         "budget_ms": 10.666667, "over_budget": True})
+            rows.append({"type": "audio_timing", "t_ms": 201, "duration_ms": 99,
+                         "budget_ms": 10.666667, "over_budget": True})
+            rows.append({"type": "audio_window", "t_ms": 201, "from_ms": 186,
+                         "peak_ms": 99, "over_budget": 1})
+            path.write_text("\n".join(map(json.dumps, rows)), encoding="utf-8")
+            run = module.report([path])["runs"][0]
+            self.assertTrue(run["complete"])
+            self.assertEqual(run["observed_peak_ms_in_complete_windows"], 12)
+            self.assertEqual(run["timing"]["observed_peak_ms"], 14)
+            self.assertEqual(run["timing"]["flagged_over_budget_events"], 1)
+            self.assertEqual(run["timing"]["boundary_timing_events_excluded"], 1)
+            self.assertEqual(run["deadline_status"], "deadline_misses_observed")
+            self.assertAlmostEqual(run["buffer_budget_ms"], 512 / 48)
+
+    def test_timing_keeps_paused_tails_and_start_gaps_separate(self):
+        run = [
+            {"type": "live_test_phase", "t_ms": 0, "detail": "mode=playing movement=1 fx_canvas=0"},
+            {"type": "audio_timing", "t_ms": 1, "duration_ms": 15, "over_budget": True},
+            {"type": "live_test_phase", "t_ms": 2, "detail": "mode=paused_tails movement=1 fx_canvas=1"},
+            {"type": "audio_timing", "t_ms": 3, "duration_ms": 12, "over_budget": True},
+            {"type": "audio_timing", "t_ms": 4, "duration_ms": .1, "over_budget": False, "extra_start_gap_ms": 20},
+        ]
+        timing = module.timing_usage(run, [])
+        self.assertEqual(timing["flagged_over_budget_events"], 2)
+        self.assertEqual(timing["largest_extra_start_gap_ms"], 20)
+        self.assertEqual([(r["mode"], r["over_budget_events"]) for r in timing["over_budget_by_movement_and_state"]],
+                         [("playing", 1), ("paused_tails", 1)])
+
+    def test_stage_windows_do_not_mix_profiled_and_unprofiled_passes(self):
+        run = [
+            {"type": "live_test_stage", "t_ms": 0, "detail": "stage=full_pass movement=0 profile=0"},
+            {"type": "live_test_stage", "t_ms": 10000, "detail": "stage=dense_closed movement=0 profile=1"},
+            {"type": "live_test_complete", "t_ms": 20000},
+        ]
+        windows = [{"from_ms": a, "t_ms": b, "callbacks": 10, "average_ms": avg, "peak_ms": avg}
+                   for a, b, avg in [(100, 9000, 1), (9000, 11000, 999), (11000, 19000, 2)]]
+        stages = module.stage_usage(run, windows)
+        self.assertEqual([s["average_callback_ms"] for s in stages], [1, 2])
+        self.assertEqual([s["profile"] for s in stages], ["0", "1"])
+
     def test_idle_windows_exclude_boundaries_and_settling(self):
         run = [{"type": "live_test_phase", "t_ms": 100, "detail": "mode=stopped fx_canvas=1 settle_ms=2000"},
                {"type": "live_test_phase", "t_ms": 6100, "detail": "mode=playing fx_canvas=0 settle_ms=2000"},

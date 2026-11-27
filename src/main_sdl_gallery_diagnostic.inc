@@ -77,5 +77,5 @@ static void live_test_gallery_inventory(const TsSamplePages *pages,const TsMatri
         "movement=%d id=%llu cards=%d samples=%d patterns=%d live=%d video=%d missing_sources=%d markers=%d length_s=%.6f speed=%.6f matrix_enabled=%d project_effects=%d playback=%s name=%s",
         p,(unsigned long long)c->id,live_test.movement_cards[p],samples,patterns,live,video,missing,
         live_test.movement_markers[p],live_test.movement_end[p],m->speed,controls->enabled,effects,
-        live_test.movement_end[p]>0?"sampled_loop":"skipped_empty",c->name);
+        live_test.movement_end[p]>0?(live_test.mode==4?(live_test.movement_end[p]>=.001?"full_and_stress":"unsupported_submillisecond"):"sampled_loop"):"skipped_empty",c->name);
 }

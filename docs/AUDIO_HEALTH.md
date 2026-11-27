@@ -266,6 +266,14 @@ rendering and native backend processing and is not a Windows hardware guarantee.
 
 ## Loaded-project Gallery diagnostic
 
+For full playback and pathological crossfade coverage, use
+`[Audio] diagnostic_live_test=4`. The adaptive plan discovers the loaded Gallery,
+plays through its movements, exercises genuine overlapping scenes and dense
+passages, compares Canvas visibility at the same positions, and checks transport
+recovery. Full-play measurements and profiled stress stages remain separate.
+The estimated duration appears before Play; long projects take correspondingly
+longer. Completion and audio deadline results are reported separately.
+
 Set `[Audio] diagnostic_live_test=1` in the active `tapesister.ini` and restart.
 Open any project and press Mosaic Play when **GALLERY TEST ARMED** appears.
 The test discovers all movements, samples playback and idle states, profiles

@@ -6,10 +6,11 @@
 #endif
 enum { LT_OFF, LT_ARMED, LT_PENDING, LT_RUNNING, LT_DONE, LT_ABORTED, LT_PREPARING };
 enum { LT_CHECK, LT_FX, LT_MATRIX, LT_CLOSE, LT_MIX, LT_GRAIN, LT_MUTE,
-       LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END, LT_SPACE, LT_BACKSPACE, LT_SEEK, LT_FOLLOW, LT_ASSERT, LT_INVENTORY };
+       LT_SOLO, LT_BYPASS, LT_TRACKER, LT_MOSAIC, LT_HEALTH, LT_GALLERY, LT_END, LT_SPACE, LT_BACKSPACE, LT_SEEK, LT_FOLLOW, LT_ASSERT, LT_INVENTORY,
+       LT_STRESS_BEGIN,LT_STRESS_WAIT,LT_STRESS_PAUSE,LT_STRESS_PAUSED,LT_STRESS_BUSY,LT_STRESS_STOP,LT_STRESS_END };
 typedef struct { unsigned ms; int action,target; float value; } LiveTestStep;
 static struct {
-    int state,touched,count,next,profile,mode,profile_failed,gallery_test,movements;
+    int state,touched,count,next,profile,mode,profile_failed,gallery_test,movements,plan_failed;
     double keter_end,profile_from_ms,parked_time;
     unsigned duration_ms;
     Uint64 started,frequency;
@@ -18,20 +19,21 @@ static struct {
     float mixes[TS_MATRIX_EFFECT_CAPACITY],grain;
     double movement_end[TS_GALLERY_LIMIT];
     int movement_cards[TS_GALLERY_LIMIT],movement_markers[TS_GALLERY_LIMIT];
-    LiveTestStep steps[1024];
+    LiveTestStep steps[4096];
     unsigned dropped_audio,dropped_events,export_serial;
     int exporting,phase_key;
     char project[TS_BROWSER_PATH_MAX];
 } live_test;
 static const char *live_test_scenario(void)
-{return live_test.gallery_test?"gallery-live-v1":live_test.mode==3?"tree04-keter-profile-v1":
+{return live_test.mode==4?"gallery-stress-v1":live_test.gallery_test?"gallery-live-v1":live_test.mode==3?"tree04-keter-profile-v1":
     live_test.mode>=2?"tree04-keter-full-v1":"tree04-live-v1";}
 static const char *live_test_action_name(int a)
 {
     static const char *names[]={"checkpoint","fx_canvas","routing_matrix","close_matrix",
         "effect_mix","grain_size","mute","solo","bypass","tracker","mosaic",
-        "health_window","gallery","finish","space","backspace","seek","follow","verify_state","movement_inventory"};
-    return a>=0 && a<=LT_INVENTORY?names[a]:"invalid";
+        "health_window","gallery","finish","space","backspace","seek","follow","verify_state","movement_inventory",
+        "stress_begin","stress_wait","stress_pause","stress_paused","stress_busy","stress_stop","stress_end"};
+    return a>=0 && a<=LT_STRESS_END?names[a]:"invalid";
 }
 static const char *live_test_label(void)
 {
@@ -51,10 +53,13 @@ static void live_test_add(unsigned ms,int action,int target,float value)
 {
     if(live_test.count<(int)(sizeof(live_test.steps)/sizeof(*live_test.steps)))
         live_test.steps[live_test.count++]=(LiveTestStep){ms,action,target,value};
+    else live_test.plan_failed=1;
 }
 #include "main_sdl_gallery_diagnostic.inc"
+#include "main_sdl_gallery_stress.inc"
 static void live_test_plan(void)
 {
+    if(live_test.mode==4){live_test_stress_plan();return;}
     if(live_test.gallery_test){live_test_gallery_plan();return;}
     live_test.count=0;live_test_add(0,LT_CHECK,0,0);
     /* Legacy full Keter modes retain uninterrupted playback. */
@@ -101,12 +106,18 @@ static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
         ts_session_log_text("live_test_abort","reason=project_replaced");
         ts_profile_enable(live_test.profile);
     }
-    live_test.state=LT_OFF;live_test.touched=0;live_test.count=0;live_test.next=0;live_test.movements=0;live_test.profile_failed=0;live_test.gallery_test=0;live_test.phase_key=-1;
+    live_test.state=LT_OFF;live_test.touched=0;live_test.count=0;live_test.next=0;live_test.movements=0;live_test.profile_failed=0;live_test.gallery_test=0;live_test.phase_key=-1;live_test.plan_failed=0;
+    memset(&live_stress,0,sizeof(live_stress));live_stress.current_job=-1;
+    live_test.mode=ui->config.diagnostic_live_test;
     if(!ui->config.diagnostic_live_test)return;
-    live_test.gallery_test=ui->config.diagnostic_live_test==1;
+    live_test.gallery_test=ui->config.diagnostic_live_test==1 || ui->config.diagnostic_live_test==4;
     if(live_test.gallery_test && !live_test_gallery_scan(pages)) {
         snprintf(ui->status,sizeof(ui->status),"LIVE TEST: PROJECT HAS NO VALID GALLERY");
         ts_session_log_text("live_test_rejected","reason=invalid_gallery");return;
+    }
+    if(live_test.mode==4 && !live_test_stress_scan(pages)) {
+        snprintf(ui->status,sizeof(ui->status),"GALLERY STRESS: INVALID OR UNBOUNDED MOVEMENT / SEE SESSION LOG");
+        ts_session_log_text("live_test_rejected","reason=invalid_stress_plan");return;
     }
     if(!live_test.gallery_test && !live_test_matches(&a->sister.matrix.controls,pages,path)) {
         snprintf(ui->status,sizeof(ui->status),"LIVE TEST: MODES 2/3 REQUIRE ORIGINAL TREE OF LIFE 04; USE 1 FOR ANY GALLERY");
@@ -117,42 +128,51 @@ static void live_test_loaded(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     }
     live_test.mode=ui->config.diagnostic_live_test;
     live_test.keter_end=ts_mosaic_end(pages->gallery->canvas[0].scene);
-    if(live_test.mode>=2 && (!isfinite(live_test.keter_end) || live_test.keter_end<=0 || live_test.keter_end>3600)) {
+    if((live_test.mode==2 || live_test.mode==3) && (!isfinite(live_test.keter_end) || live_test.keter_end<=0 || live_test.keter_end>3600)) {
         snprintf(ui->status,sizeof(ui->status),"KETER TEST: EXPECTED A MOVEMENT UNDER ONE HOUR");return;
     }
     live_test.duration_ms=live_test.mode>=2?(unsigned)ceil(live_test.keter_end*1000)+8000:216000;
     live_test.project_hash=ui->saved_state_hash;
     snprintf(live_test.project,sizeof(live_test.project),"%s",path);
-    live_test_plan();live_test.state=LT_PREPARING;live_test.touched=1;
+    live_test_plan();
+    if(live_test.plan_failed || !live_test.count) {
+        snprintf(ui->status,sizeof(ui->status),"GALLERY TEST: PLAN EXCEEDS DIAGNOSTIC LIMITS");
+        ts_session_log_text("live_test_rejected","reason=plan_capacity_or_time_overflow");return;
+    }
+    live_test.state=LT_PREPARING;live_test.touched=1;
     if(device)SDL_LockAudioDevice(device);
     for(int p=0;p<(live_test.gallery_test?live_test.movements:3);++p) {
         TsMosaic *m=pages->gallery->canvas[p].scene;
         ts_mosaic_seek(m,0);m->playing=0;m->marker_loop=0;
         /* Repeat the complete movement so short projects remain measurable.
            Keep saved speed, envelopes, sound parameters and routing intact. */
-        m->repeat=live_test.gallery_test && live_test.movement_end[p]>0;
+        m->repeat=live_test.gallery_test && live_test.mode!=4 && live_test.movement_end[p]>0;
         if(live_test.gallery_test){m->loop_range=(TsMosaicRange){0,0};m->grid.enabled=0;}
         else ts_mosaic_set_speed(m,1);
         pages->gallery->canvas[p].entry=TS_GALLERY_RESUME;
     }
     ts_gallery_sequence_stop(pages->gallery);
     pages->gallery->fade_seconds=0;
+    pages->gallery->diagnostic_enabled=live_test.mode==4;
+    pages->gallery->diagnostic_count=pages->gallery->diagnostic_overflow=0;
+    pages->gallery->diagnostic_active=-1;pages->gallery->diagnostic_serial=0;
     if(device)SDL_UnlockAudioDevice(device);
     ui->mosaic_open=1;ui->tracker_open=ui->fm_open=0;
     ui->mosaic_scroll=0;ui->mosaic_scale=4;ui->mosaic_hscale=1;
     ui->project_check_ms=0;
     if(live_test.gallery_test)snprintf(ui->status,sizeof(ui->status),"PREPARING GALLERY DIAGNOSTIC / PRESS PLAY WHEN ARMED");
     else if(live_test.mode>=2)snprintf(ui->status,sizeof(ui->status),"PREPARING UNINTERRUPTED KETER TEST / PRESS PLAY WHEN ARMED");
-    ts_session_log_event("live_test_armed","scenario=%s steps=%d movements=%d project_hash=%016llx start_s=0 fade_s=0 duration_ms=%u",
+    ts_session_log_event("live_test_armed","scenario=%s steps=%d movements=%d project_hash=%016llx start_s=0 %s duration_ms=%u",
         live_test_scenario(),live_test.count,live_test.gallery_test?live_test.movements:1,
-        (unsigned long long)live_test.project_hash,live_test.duration_ms);
+        (unsigned long long)live_test.project_hash,live_test.mode==4?"fade_policy=generated":"fade_s=0",live_test.duration_ms);
+    if(live_test.mode==4)live_test_stress_log_plan(pages);
 }
 static void live_test_transport(TsUiState *ui,int playing)
 {
     (void)ui;
     if(live_test.state==LT_ARMED && playing) {
-        live_test.profile=ts_profile_enabled();ts_profile_enable(live_test.gallery_test || live_test.mode==3);
-        if(live_test.gallery_test || live_test.mode==3)ts_profile_reset();
+        live_test.profile=ts_profile_enabled();ts_profile_enable(live_test.mode!=4 && (live_test.gallery_test || live_test.mode==3));
+        if(live_test.mode!=4 && (live_test.gallery_test || live_test.mode==3))ts_profile_reset();
         live_test.profile_from_ms=0;
         live_test.started=SDL_GetPerformanceCounter();live_test.frequency=SDL_GetPerformanceFrequency();
         live_test.state=LT_PENDING;
@@ -163,7 +183,7 @@ static void live_test_transport(TsUiState *ui,int playing)
    Epoch publication is asynchronous; a boundary can straddle one callback. */
 static void live_test_profile_interval(int phase,double elapsed_ms)
 {
-    if((!live_test.gallery_test && live_test.mode!=3) || phase==0)return;
+    if((!live_test.gallery_test && live_test.mode!=3) || phase==0 || (live_test.mode==4 && !live_stress.profile))return;
     char text[16384];
     int n=snprintf(text,sizeof(text),
         "scenario=%s from_ms=%.3f to_ms=%.3f phase=%d profile=1\n",
@@ -179,6 +199,10 @@ static void live_test_checkpoint(AudioState *a,int phase)
     double elapsed=1000.0*(SDL_GetPerformanceCounter()-live_test.started)/live_test.frequency;
     live_test_profile_interval(phase,elapsed);
     TsRealtimeDiagnosticsSnapshot s={0};ts_realtime_diagnostics_get(&a->realtime_diagnostics,&s);
+    if(live_test.mode==4) {
+        if(phase==0)live_stress.initial=s;
+        if(phase==8 || phase==-1){live_stress.final=s;live_stress.final_valid=1;}
+    }
     ts_session_log_event("live_test_checkpoint",
         "phase=%d elapsed_ms=%.3f callbacks=%llu frames=%llu over_budget=%llu near_budget=%llu max_ms=%.6f generation=%u",
         phase,elapsed,
@@ -191,12 +215,22 @@ static void live_test_finish(SDL_AudioDeviceID device,AudioState *a,TsUiState *u
     live_test_checkpoint(a,complete?8:-1);
     if(live_test.profile_failed){complete=0;reason="profile_log_unavailable";}
     live_test.state=complete?LT_DONE:LT_ABORTED; /* Stop cannot rearm the run. */
-    mosaic_transport(device,a,ui,1);ts_profile_enable(live_test.profile);
+    mosaic_transport(device,a,ui,1);
+    if(live_test.mode==4) {
+        TsSamplePages observed={.gallery=a->gallery};
+        live_test_stress_observe(device,a,&observed);
+        int covered=live_test_stress_coverage(device,a,complete);
+        if(complete && !covered){complete=0;reason=live_stress.playable?"incomplete_stress_coverage":"no_playback_workload";live_test.state=LT_ABORTED;}
+    }
+    ts_profile_enable(live_test.profile);
     ts_session_log_event(complete?"live_test_complete":"live_test_abort",
         "scenario=%s completed=%d total=%d reason=%s",live_test_scenario(),live_test.next,live_test.count,reason);
     TsSessionLogStatus log;ts_session_log_status(&log);live_test.export_serial=log.export_serial;
     int saved=ts_session_log_export_project(live_test.project,0);live_test.exporting=saved;
-    snprintf(ui->status,sizeof(ui->status),"LIVE TEST %s / LOG %s / RELOAD PROJECT TO REPEAT",
+    if(live_test.mode==4)snprintf(ui->status,sizeof(ui->status),"STRESS %s / %llu DEADLINE MISSES / %s / RELOAD TO REPEAT",
+        !live_stress.playable?"NO PLAYBACK WORKLOAD":complete?"EXECUTED":"INCOMPLETE",(unsigned long long)live_stress.over_budget,
+        saved?"LOG EXPORT QUEUED":"EXPORT FAILED: F12");
+    else snprintf(ui->status,sizeof(ui->status),"LIVE TEST %s / LOG %s / RELOAD PROJECT TO REPEAT",
         complete?"COMPLETE":"ABORTED",saved?"EXPORT QUEUED":"EXPORT FAILED; USE F12 SAVE SESSION");
     ui->project_check_ms=0;
 }
@@ -222,6 +256,7 @@ static int live_test_action(const LiveTestStep *s,SDL_Window *window,SDL_AudioDe
     AudioState *a,TsUiState *ui,TsSamplePages *pages,TsInstrument *bank,MosaicController *mosaic,
     PortalController *portal,SisterWindow *sister,TransformController *transform)
 {
+    if(s->action>=LT_STRESS_BEGIN)return live_test_stress_action(s,window,device,a,ui,pages,bank,mosaic);
     if(s->action==LT_INVENTORY) {
         live_test_gallery_inventory(pages,&a->sister.matrix.controls,s->target);
         mosaic_fit_all(ui,mosaic);return 1;
@@ -347,10 +382,21 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
             live_test.state=LT_ABORTED;
             snprintf(ui->status,sizeof(ui->status),"LIVE TEST COULD NOT SELECT CANVAS / RELOAD TO RETRY");return;
         }
+        if(live_test.mode==4) {
+            if(device)SDL_LockAudioDevice(device);
+            int prepared=ts_gallery_sequence_prepare(pages->gallery,ui->mosaic_gallery_status,sizeof(ui->mosaic_gallery_status));
+            if(device)SDL_UnlockAudioDevice(device);
+            if(!prepared) {
+                live_test.state=LT_ABORTED;
+                ts_session_log_text("live_test_rejected","reason=cannot_prepare_stress_gallery");
+                snprintf(ui->status,sizeof(ui->status),"GALLERY STRESS: COULD NOT PREPARE PLAYBACK / RELOAD");return;
+            }
+        }
         ui->mosaic_scroll=0;ui->mosaic_scale=4;ui->mosaic_hscale=1;
         live_test.state=LT_ARMED;
         if(live_test.gallery_test)snprintf(ui->status,sizeof(ui->status),
-            "GALLERY TEST ARMED: %d MOVEMENTS / %u:%02u / MOSAIC PLAY / ESC ABORTS",
+            "%s ARMED: %d MOVEMENTS / %u:%02u / MOSAIC PLAY / ESC ABORTS",
+            live_test.mode==4?"GALLERY STRESS":"GALLERY TEST",
             live_test.movements,live_test.duration_ms/60000,(live_test.duration_ms/1000)%60);
         else snprintf(ui->status,sizeof(ui->status),"KETER %s TEST ARMED: MOSAIC PLAY / %u:%02u / ESC ABORTS",
             live_test.mode==3?"PROFILE":"FULL",live_test.duration_ms/60000,(live_test.duration_ms/1000)%60);
@@ -360,7 +406,10 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
         TsSessionLogStatus log;ts_session_log_status(&log);
         if(log.export_serial!=live_test.export_serial && log.export_result!=1) {
             live_test.exporting=0;
-            snprintf(ui->status,sizeof(ui->status),"LIVE TEST %s / %s / RELOAD PROJECT TO REPEAT",
+            if(live_test.mode==4)snprintf(ui->status,sizeof(ui->status),"STRESS %s / %llu DEADLINE MISSES / %s / RELOAD",
+                !live_stress.playable?"NO PLAYBACK WORKLOAD":live_test.state==LT_DONE?"EXECUTED":"INCOMPLETE",(unsigned long long)live_stress.over_budget,
+                log.export_result==2?"LOG SAVED":"EXPORT FAILED: F12");
+            else snprintf(ui->status,sizeof(ui->status),"LIVE TEST %s / %s / RELOAD PROJECT TO REPEAT",
                 live_test.state==LT_DONE?"COMPLETE":"ABORTED",
                 log.export_result==2?"LOG SAVED IN PROJECT logs":"EXPORT FAILED; RECOVERY LOG KEPT (F12)");
         }
@@ -372,6 +421,7 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
         live_test.dropped_audio=log.dropped_audio;live_test.dropped_events=log.dropped_events;
         live_test.state=LT_RUNNING;
         TsRealtimeDiagnosticsSnapshot initial={0};ts_realtime_diagnostics_get(&a->realtime_diagnostics,&initial);
+        if(live_test.mode==4)live_stress.initial=initial;
         ts_session_log_event("live_test_start",
             "scenario=%s steps=%d movements=%d project_hash=%016llx start_ticks=%llu frequency=%llu backend=%s rate=%u frames=%u channels=%u workers=%u profile=%d revision=%s build=%s %s",
             live_test_scenario(),live_test.count,live_test.gallery_test?live_test.movements:1,(unsigned long long)live_test.project_hash,
@@ -380,25 +430,34 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
             (unsigned)a->output_rate,initial.device_buffer_frames,(unsigned)a->output_device_channels,
             ts_sunvox_workers_configured(),ts_profile_enabled(),TS_LIVE_TEST_REVISION,__DATE__,__TIME__);
     }
-    if((live_test.gallery_test || live_test.mode==3) && !ts_profile_enabled()) {
+    if((live_test.mode==4?live_stress.profile:(live_test.gallery_test || live_test.mode==3)) && !ts_profile_enabled()) {
         live_test_finish(device,a,ui,0,"profile_unavailable");return;
     }
     if(a->audio_health_generation!=live_test.generation || strcmp(ui->project_path,live_test.project)) {
         live_test_finish(device,a,ui,0,"device_or_project_changed");return;
     }
     live_test_phase(device,a,ui,pages);
+    if(live_test.mode==4 && !live_test_stress_observe(device,a,pages)) {
+        live_test_finish(device,a,ui,0,"incomplete_transition_trace");return;
+    }
     if(live_test.next>=live_test.count)return;
     const LiveTestStep *s=&live_test.steps[live_test.next];
     double elapsed=1000.0*(now-live_test.started)/live_test.frequency;
-    if(elapsed<s->ms)return;
+    double due=s->ms+(live_test.mode==4?live_stress.schedule_offset:0);
+    if(elapsed<due)return;
     TsSessionLogStatus log;ts_session_log_status(&log);
     if(log.state!=TS_SESSION_RECORDING || log.dropped_audio!=live_test.dropped_audio || log.dropped_events!=live_test.dropped_events) {
         live_test_finish(device,a,ui,0,"incomplete_telemetry");return;
     }
+    if(live_test.mode==4 && !live_test_stress_ready(s,device,a,pages)) {
+        live_stress.waiting_audio=1;
+        if(elapsed>due+30000)live_test_finish(device,a,ui,0,"audio_clock_progress_timeout");
+        return;
+    }
     uint64_t frames=atomic_load_explicit(&a->realtime_diagnostics.frame_count,memory_order_relaxed);
     ts_session_log_event("live_test_action_begin",
-        "index=%d action=%s target=%d value=%.6f planned_ms=%u actual_ms=%.3f late_ms=%.3f audio_frames=%llu",
-        live_test.next,live_test_action_name(s->action),s->target,s->value,s->ms,elapsed,elapsed-s->ms,(unsigned long long)frames);
+        "index=%d action=%s target=%d value=%.6f planned_ms=%u actual_ms=%.3f late_ms=%.3f audio_frames=%llu adjusted_due_ms=%.3f",
+        live_test.next,live_test_action_name(s->action),s->target,s->value,s->ms,elapsed,elapsed-s->ms,(unsigned long long)frames,due);
     Uint64 begin=SDL_GetPerformanceCounter();
     int ok=s->action==LT_END || live_test_action(s,window,device,a,ui,pages,bank,mosaic,portal,sister,transform);
     double duration=1000.0*(SDL_GetPerformanceCounter()-begin)/live_test.frequency;
@@ -406,6 +465,13 @@ static void live_test_poll(SDL_Window *window,SDL_AudioDeviceID device,AudioStat
         live_test.next,ok,duration,pages->gallery?pages->gallery->active:-1);
     if(ok && s->action!=LT_END)live_test_phase(device,a,ui,pages);
     ++live_test.next;
+    if(live_test.mode==4 && elapsed>due) {
+        live_stress.schedule_offset+=elapsed-due;
+        ts_session_log_event("live_test_schedule_adjustment",
+            "reason=%s action=%d delay_ms=%.6f cumulative_ms=%.6f",
+            live_stress.waiting_audio?"audio_clock_progress":"stage_dispatch",live_test.next-1,elapsed-due,live_stress.schedule_offset);
+    }
+    if(live_test.mode==4)live_stress.waiting_audio=0;
     if(live_test.profile_failed){live_test_finish(device,a,ui,0,"profile_log_unavailable");return;}
     if(!ok){live_test_finish(device,a,ui,0,"action_failed");return;}
     if(s->action==LT_END){live_test_finish(device,a,ui,1,"finished");return;}

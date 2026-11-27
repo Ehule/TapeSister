@@ -8,6 +8,7 @@
 #include <string.h>
 
 #define SLOTS TS_SISTER_FX_SLOT_COUNT
+_Static_assert(SLOTS <= 32, "pedalboard lifecycle masks must cover every slot");
 struct TsPedalboardSlot {
     TsSisterFxSlotControls controls;
     TsSisterSingleFx *native;
@@ -21,6 +22,10 @@ struct TsPedalboard {
     TsPedalboardSlot *child[SLOTS], *previous[SLOTS], *orphan[SLOTS];
     atomic_uint remaining[SLOTS], orphan_remaining[SLOTS];
     unsigned total[SLOTS], orphan_total[SLOTS], rate, owner;
+    /* Audio-owned hot-path masks. Topology publication/retirement already
+       excludes processing; the atomic counters remain the UI's completion
+       notification. Stable boards need no per-frame lifecycle scan. */
+    unsigned active, fading, orphaned;
     uint32_t board_id,transport_serial;double quarter;
     float gate[SLOTS], start[SLOTS], previous_gate[SLOTS], orphan_gate[SLOTS];
     unsigned gate_remaining[SLOTS], gate_total[SLOTS];
@@ -142,6 +147,7 @@ TsPedalboard *ts_pedalboard_new(const TsPedalboardControls *c,unsigned rate,uint
         if(c->slot[i].type) {
             b->child[i]=ts_pedalboard_slot_new(&c->slot[i],rate,seed^(identity(c,i)*UINT32_C(0x9e3779b9)));
             if(!b->child[i]){ts_pedalboard_free(b);return NULL;}
+            b->active|=1u<<i;
         }
         b->gate[i]=c->slot[i].enabled;
     }
@@ -198,8 +204,12 @@ void ts_pedalboard_commit(TsPedalboard *b,const TsPedalboardControls *c,TsPedalb
     memcpy(old,b->child,sizeof(old));memcpy(gate,b->gate,sizeof(gate));memcpy(start,b->start,sizeof(start));
     memcpy(remaining,b->gate_remaining,sizeof(remaining));memcpy(total,b->gate_total,sizeof(total));
     unsigned fade=b->rate*12/1000;if(!fade)fade=1;
+    /* A newly inserted child can still be fading from silence without a
+       previous pointer. Preserve that countdown when another slot changes. */
+    b->active=b->orphaned=0;
     for(int i=0;i<SLOTS;++i) {
         int j=p->reuse[i];b->child[i]=j>=0?old[j]:p->fresh[i];p->fresh[i]=NULL;
+        if(b->child[i])b->active|=1u<<i;
         if(j>=0){used[j]=1;b->gate[i]=gate[j];b->start[i]=start[j];b->gate_remaining[i]=remaining[j];b->gate_total[i]=total[j];}
         else {b->gate[i]=c->slot[i].enabled;b->gate_remaining[i]=0;}
     }
@@ -207,9 +217,9 @@ void ts_pedalboard_commit(TsPedalboard *b,const TsPedalboardControls *c,TsPedalb
         for(int j=0;j<b->controls.count;++j)if(!used[j] && identity(c,i)==identity(&b->controls,j)) {
             b->previous[i]=old[j];b->previous_gate[i]=gate[j];used[j]=1;break;
         }
-        b->total[i]=fade;atomic_store(&b->remaining[i],fade+ts_pedalboard_slot_latency(b->child[i]));
+        b->total[i]=fade;atomic_store(&b->remaining[i],fade+ts_pedalboard_slot_latency(b->child[i]));b->fading|=1u<<i;
     }
-    for(int j=0;j<SLOTS;++j)if(!used[j] && old[j]){b->orphan[j]=old[j];b->orphan_gate[j]=gate[j];b->orphan_total[j]=fade;atomic_store(&b->orphan_remaining[j],fade);}
+    for(int j=0;j<SLOTS;++j)if(!used[j] && old[j]){b->orphan[j]=old[j];b->orphan_gate[j]=gate[j];b->orphan_total[j]=fade;atomic_store(&b->orphan_remaining[j],fade);b->orphaned|=1u<<j;}
     /* Compare enable changes against the processor that moved, not its former
        row. Preserve its ongoing ramp and DSP history. */
     TsPedalboardControls before=*c;
@@ -229,6 +239,7 @@ int ts_pedalboard_collect_ready(const TsPedalboard *b)
 void ts_pedalboard_collect(TsPedalboard *b,TsPedalboardPlan *p,int offline)
 {
     memset(p,0,sizeof(*p));if(!b)return;
+    if(offline)b->fading=b->orphaned=0;
     for(int i=0;i<SLOTS;++i) {
         if(offline){atomic_store(&b->remaining[i],0);atomic_store(&b->orphan_remaining[i],0);}
         if(!atomic_load(&b->remaining[i])){p->garbage[i]=b->previous[i];b->previous[i]=NULL;}
@@ -236,7 +247,7 @@ void ts_pedalboard_collect(TsPedalboard *b,TsPedalboardPlan *p,int offline)
     }
 }
 void ts_pedalboard_finish_edits(TsPedalboard *b)
-{for(int i=0;b && i<SLOTS;++i){atomic_store(&b->remaining[i],0);atomic_store(&b->orphan_remaining[i],0);}}
+{if(b){b->fading=b->orphaned=0;for(int i=0;i<SLOTS;++i){atomic_store(&b->remaining[i],0);atomic_store(&b->orphan_remaining[i],0);}}}
 void ts_pedalboard_profile_owner(TsPedalboard *b,unsigned owner,uint32_t board_id)
 { if(b){b->owner=owner;b->board_id=board_id;} }
 unsigned ts_pedalboard_latency(const TsPedalboard *b)
@@ -261,12 +272,12 @@ void ts_pedalboard_process_observed(TsPedalboard *b,const TsStereoFrame *in,TsSt
     if(!b){memmove(out,in,frames*sizeof(*out));if(dry)memmove(dry,in,frames*sizeof(*dry));return;}
     while(frames) {
         unsigned n=frames>64?64:frames;
-        for(int i=0;i<SLOTS;++i)if(atomic_load(&b->remaining[i]) || atomic_load(&b->orphan_remaining[i])){n=1;break;}
+        if(b->fading || b->orphaned)n=1;
         TsStereoFrame scratch[64],reference[64];float gate[64];memcpy(scratch,in,n*sizeof(*in));memcpy(reference,in,n*sizeof(*in));
-        for(int i=0;i<SLOTS;++i) {
-            unsigned left=atomic_load(&b->remaining[i]);
-            if(!b->child[i] && !left)continue;
-            slot_transport(b,b->child[i]);slot_transport(b,b->previous[i]);
+        unsigned mask=b->active|b->fading;
+        for(int i=0;mask;++i,mask>>=1) if(mask&1u) {
+            unsigned left=(b->fading&(1u<<i))?atomic_load_explicit(&b->remaining[i],memory_order_relaxed):0;
+            slot_transport(b,b->child[i]);if(left)slot_transport(b,b->previous[i]);
             uint64_t measured=ts_profile_child_begin(b->owner,i);
             for(unsigned j=0;j<n;++j)gate[j]=advance(b,i);
             if(left) {
@@ -278,6 +289,7 @@ void ts_pedalboard_process_observed(TsPedalboard *b,const TsStereoFrame *in,TsSt
                 reference[0]=(TsStereoFrame){old_dry.l+(reference[0].l-old_dry.l)*t,old_dry.r+(reference[0].r-old_dry.r)*t};
                 scratch[0]=(TsStereoFrame){old.l+(scratch[0].l-old.l)*t,old.r+(scratch[0].r-old.r)*t};
                 atomic_store(&b->remaining[i],left-1);
+                if(left==1)b->fading&=~(1u<<i);
             } else {ts_pedalboard_slot_span(b->child[i],scratch,gate,scratch,n);ts_pedalboard_slot_dry(b->child[i],reference,reference,n);}
             if(spectrum && i<b->controls.count && identity(&b->controls,i)==child && b->controls.slot[i].type==TS_SISTER_FX_EQ)
                 for(unsigned j=0;j<n;++j)ts_eq_spectrum_push(spectrum,scratch[j],b->rate);
@@ -286,12 +298,14 @@ void ts_pedalboard_process_observed(TsPedalboard *b,const TsStereoFrame *in,TsSt
                     ts_profile_child_end(b->owner,i,b->board_id,&id,measured,left!=0);}
             }
         }
-        for(int i=0;i<SLOTS;++i) {
-            unsigned left=atomic_load(&b->orphan_remaining[i]);if(!left)continue;
+        mask=b->orphaned;
+        for(int i=0;mask;++i,mask>>=1) if(mask&1u) {
+            unsigned left=atomic_load_explicit(&b->orphan_remaining[i],memory_order_relaxed);
             TsStereoFrame zero={0},tail;float k=b->orphan_gate[i];
             ts_pedalboard_slot_span(b->orphan[i],&zero,&k,&tail,1);k=(float)left/b->orphan_total[i];
             TsStereoFrame dry_tail;ts_pedalboard_slot_dry(b->orphan[i],&zero,&dry_tail,1);reference[0].l+=dry_tail.l*k;reference[0].r+=dry_tail.r*k;
             scratch[0].l+=tail.l*k;scratch[0].r+=tail.r*k;atomic_store(&b->orphan_remaining[i],left-1);
+            if(left==1)b->orphaned&=~(1u<<i);
         }
         for(unsigned j=0;j<n;++j){out[j]=ts_stereo_frame_sanitize_inline(scratch[j]);if(dry)dry[j]=ts_stereo_frame_sanitize_inline(reference[j]);}
         in+=n;out+=n;if(dry)dry+=n;frames-=n;

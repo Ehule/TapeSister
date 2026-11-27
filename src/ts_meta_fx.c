@@ -370,6 +370,44 @@ TsStereoFrame ts_meta_process(TsMetaEngine *e, TsStereoFrame in) {
         }
     return ts_stereo_frame_sanitize(in);
 }
+void ts_meta_process_span(TsMetaEngine *e, const TsStereoFrame *input,
+                          TsStereoFrame *output, unsigned frames) {
+    if (!frames) return;
+    if (!e) {
+        memmove(output, input, frames * sizeof(*output));
+        return;
+    }
+    while (frames) {
+        /* A span may not cross a macro refresh. Each child keeps its exact
+           sample order, smoothing and private random state; grouping only
+           removes repeated dispatch through the rack and child type switch. */
+        if (!e->clock) {
+            e->clock = e->step;
+            refresh(e, 0);
+        }
+        unsigned count = frames < 64 ? frames : 64;
+        if (count > e->clock) count = e->clock;
+        TsStereoFrame scratch[64];
+        float gates[64];
+        memcpy(scratch, input, count * sizeof(*scratch));
+        for (int i = 0; i < e->controls.count; ++i) if (e->child[i]) {
+            float target = e->controls.stage[i].enabled;
+            if (e->gate[i] == target) {
+                for (unsigned j = 0; j < count; ++j) gates[j] = target;
+            } else for (unsigned j = 0; j < count; ++j) {
+                e->gate[i] += (target - e->gate[i]) * e->gate_smooth;
+                if (fabsf(e->gate[i] - target) < 1e-6f) e->gate[i] = target;
+                gates[j] = e->gate[i];
+            }
+            ts_sister_single_fx_transport(e->child[i], e->quarter, e->transport_serial);
+            ts_sister_single_fx_process_span(e->child[i], scratch, gates, scratch, count);
+        }
+        for (unsigned j = 0; j < count; ++j)
+            output[j] = ts_stereo_frame_sanitize_inline(scratch[j]);
+        e->clock -= count;
+        input += count; output += count; frames -= count;
+    }
+}
 size_t ts_meta_memory(const TsMetaEngine *e) {
     if (!e)
         return 0;

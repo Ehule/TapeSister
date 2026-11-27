@@ -78,7 +78,7 @@ int main(void)
             assert(reads-before==4*4*FRAMES*2+BLOCKS*2+2);
             char report[16384];ts_profile_report(report,sizeof(report));
             assert(strstr(report,"#4 SUNVOX Profile probe (1024 frames)"));
-            assert(strstr(report,"crossfade samples"));
+            assert(strstr(report,"replacement fade samples"));
         }
         ts_profile_enable(0);ts_matrix_effects_free(&bank);
     }

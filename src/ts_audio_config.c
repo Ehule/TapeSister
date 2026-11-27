@@ -68,8 +68,8 @@ static int load_device_settings(TsConfig *config, const char *path,
             continue;
         }
         if (!strcmp(key,"diagnostic_live_test")) {
-            if(strcmp(value,"0") && strcmp(value,"1") && strcmp(value,"2") && strcmp(value,"3")) {
-                fclose(file);set_error(error,error_size,"diagnostic_live_test must be 0, 1, 2 or 3");return 0;
+            if(strcmp(value,"0") && strcmp(value,"1") && strcmp(value,"2") && strcmp(value,"3") && strcmp(value,"4")) {
+                fclose(file);set_error(error,error_size,"diagnostic_live_test must be 0, 1, 2, 3 or 4");return 0;
             }
             config->diagnostic_live_test=value[0]-'0';continue;
         }
@@ -191,7 +191,18 @@ int ts_audio_config_save(const TsConfig *config, const char *path,
                 "audio_buffer_frames=%d\n"
                 "; Optional independent SunVox worker; 0=serial, 1=enabled. Restart required.\n"
                 "audio_fx_workers=%d\n"
-                "; Temporary Tree of Life 04 live test: 0=off, 1=arm on project load; Mosaic Play starts.\n"
+                "; Live diagnostic mode (restart TapeSister after changing this setting).\n"
+                "; 0 = Off. Normal editing and playback.\n"
+                "; 1 = Quick Gallery scan. Samples playback, paused tails and stopped-engine load.\n"
+                ";     About 67 s per populated movement (+11 s with markers), 12 s per empty movement.\n"
+                "; 2 = Full Keter playback, profiling off.\n"
+                "; 3 = Full Keter playback with per-effect profiling.\n"
+                "; 4 = Full Gallery stress test. Plays each populated movement through with crossfades,\n"
+                ";     then profiles dense passages, FX Canvas, overlapping movements and transport recovery.\n"
+                "; Modes 1 and 4 use the loaded project's Gallery and show an estimated duration.\n"
+                "; Modes 2 and 3 require the original Tree-of-Life-Live-FX-04 project.\n"
+                "; Open the project, then press Mosaic Play when armed. Esc stops the test.\n"
+                "; Results go to the project's logs folder. Reload the project after testing.\n"
                 "diagnostic_live_test=%d\n"
                 "; Physical channel numbers; last=0 uses all device channels.\n"
                 "audio_input_first=%d\naudio_input_last=%d\n"

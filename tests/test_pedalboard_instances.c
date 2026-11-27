@@ -208,6 +208,43 @@ static void retained_children(void)
     }
     assert(tail>.001);ts_pedalboard_free(a);ts_pedalboard_free(b);
 }
+static void sparse_lifecycle_spans(void)
+{
+    /* Highest slot, holes, replacement fades, removed-child tails and a fresh
+       insert still fading from silence. Large spans must stay chronological
+       through the final fade sample and resume the stable fast path safely. */
+    TsPedalboardControls c;ts_pedalboard_default(&c);c.count=20;
+    c.slot[0].type=TS_SISTER_FX_DELAY;c.slot[0].parameter_a=.01f;c.slot[0].parameter_b=.8f;c.slot[0].mix=.7f;
+    c.slot[7].type=TS_SISTER_FX_REVERB;c.slot[7].mix=.3f;
+    c.slot[19].type=TS_SISTER_FX_DISTORTION;c.slot[19].parameter_a=.4f;
+    TsPedalboard *scalar=ts_pedalboard_new(&c,48000,91),*block=ts_pedalboard_new(&c,48000,91);
+    assert(scalar && block);
+    const unsigned lengths[]={1,3,31,64,83,257};
+    double tail=0;unsigned frame=0;
+    for(int step=0;step<160;++step) {
+        int edit=0;
+        if(step==30){c.slot[7].type=TS_SISTER_FX_TRANSIENT;edit=1;}
+        if(step==60){TsSisterFxSlotControls old=c.slot[19];c.slot[19]=c.slot[3];c.slot[3]=old;c.slot[18].type=TS_SISTER_FX_TRANSIENT;edit=1;}
+        if(step==61){c.slot[17].type=TS_SISTER_FX_TRANSIENT;edit=1;}
+        if(step==90){c.slot[0]=ts_sister_fx_empty_slot();c.slot[0].id=c.next_id++;edit=1;}
+        if(step==120){for(int i=0;i<20;++i){c.slot[i]=ts_sister_fx_empty_slot();c.slot[i].id=c.next_id++;}edit=1;}
+        if(edit) {
+            TsPedalboard *boards[]={scalar,block};
+            for(int i=0;i<2;++i){TsPedalboardPlan p;ts_pedalboard_collect(boards[i],&p,0);ts_pedalboard_discard(&p);assert(ts_pedalboard_stage(boards[i],&c,&p));ts_pedalboard_commit(boards[i],&c,&p);ts_pedalboard_discard(&p);}
+        }
+        unsigned count=lengths[step%6];
+        TsStereoFrame input[257],expected[257],out[257],expected_dry[257],dry[257];
+        for(unsigned j=0;j<count;++j,++frame){input[j]=step<85?(TsStereoFrame){.1f*sinf(frame*.017f),.06f*cosf(frame*.023f)}:(TsStereoFrame){0};ts_pedalboard_process_aligned(scalar,&input[j],&expected[j],&expected_dry[j],1);}
+        ts_pedalboard_process_aligned(block,input,out,dry,count);
+        assert(!memcmp(expected,out,count*sizeof(*out)) && !memcmp(expected_dry,dry,count*sizeof(*dry)));
+        if(step>90 && step<100)for(unsigned j=0;j<count;++j)tail+=fabsf(out[j].l)+fabsf(out[j].r);
+        if(step==150){TsPedalboardPlan p;ts_pedalboard_collect(block,&p,0);ts_pedalboard_discard(&p);assert(!ts_pedalboard_collect_ready(block));}
+    }
+    assert(tail>1e-6); /* Removal did not instantly discard the delayed signal. */
+    TsStereoFrame input={.25f,-.125f},out=ts_pedalboard_process(block,input);
+    assert(!memcmp(&input,&out,sizeof(out)));
+    ts_pedalboard_free(scalar);ts_pedalboard_free(block);
+}
 static uint64_t clock_tick;
 static uint64_t fake_clock(void){return ++clock_tick;}
 static void child_profile(void)
@@ -252,4 +289,4 @@ static void cycle_every_board(void)
 }
 #include "test_effect_eq_spectrum.inc"
 int main(void)
-{codec();capacity_and_sleep();cycle_every_board();spans_and_instances();matrix_span_aliasing();nested_sunvox();retained_children();child_profile();effect_eq_observation();original_board_eq_observation();puts("pedalboard instances: codecs, 320 children, isolation, sleep, span parity and live EQ observation passed");return 0;}
+{codec();capacity_and_sleep();cycle_every_board();spans_and_instances();matrix_span_aliasing();nested_sunvox();retained_children();sparse_lifecycle_spans();child_profile();effect_eq_observation();original_board_eq_observation();puts("pedalboard instances: codecs, 320 children, isolation, sleep, span parity and live EQ observation passed");return 0;}
