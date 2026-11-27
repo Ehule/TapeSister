@@ -441,9 +441,11 @@ static void runtime_note_render(AudioState *audio, TsAudioBuses *buses,
     ts_source_route_add(&audio->clean,channel,tile_gain);
     int matrix=audio->sister.matrix.controls.enabled;
     ts_source_route_mix_reuse(channel,&audio->clean);
+    ts_mosaic_recall_capture(matrix?&audio->sister.matrix_effects:NULL);
     TsStereoFrame mosaic=audio->gallery && ts_gallery_active(audio->gallery)==audio->mosaic?
         ts_gallery_read(audio->gallery,audio->output_rate,matrix?channel:NULL):
         ts_mosaic_read_routed(audio->mosaic,audio->output_rate,matrix?channel:NULL);
+    ts_mosaic_recall_capture(NULL);
     if(audio->gallery && audio->gallery->player.running)audio->mosaic=ts_gallery_active(audio->gallery);
     float mosaic_gain=audio->sister.performance_gain_current[2];
     mosaic.l*=mosaic_gain;mosaic.r*=mosaic_gain;

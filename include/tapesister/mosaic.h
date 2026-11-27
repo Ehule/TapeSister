@@ -5,6 +5,10 @@
 #include "tapesister/pattern_card.h"
 #include "tapesister/source_route.h"
 
+struct TsMatrixEffects;
+/* Audio thread only: bracket routed reads, including Gallery crossfades. */
+void ts_mosaic_recall_capture(struct TsMatrixEffects *effects);
+
 #define TS_MOSAIC_EVENTS 1024
 #define TS_MOSAIC_NOTES 5
 #define TS_MOSAIC_HISTORY 32

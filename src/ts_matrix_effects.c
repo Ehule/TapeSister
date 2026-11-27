@@ -19,6 +19,8 @@ struct TsMatrixEffectNode {
     TsMetaEngine *meta;float gain,gain_target,smooth;
     TsCompressor compressor;
     float recall_peak;uint32_t recall_hits;
+    float recall_fast,recall_slow,recall_attack,recall_release;
+    unsigned recall_cooldown;int recall_latched;
     float transition,mix_target;
     float gate,target,start,mix;unsigned remaining,total;
     TsMatrixModulation *mod;
@@ -84,7 +86,12 @@ static void node_set(TsMatrixEffectNode *n,const TsMatrixEffectControls *c,int c
         n->target=(float)c->enabled;n->remaining=n->total=frames;n->start=n->gate;
     }
     n->transition=c->transition;n->mix_target=c->mix;
-    if(n->type==TS_MATRIX_FX_RECALL){if(!c->enabled){n->recall_peak=0;n->recall_hits=0;}return;}
+    if(n->type==TS_MATRIX_FX_RECALL){
+        n->recall_attack=1-expf(-1.f/(n->rate*.004f));
+        n->recall_release=1-expf(-1.f/(n->rate*.100f));
+        if(!c->enabled){n->recall_peak=0;n->recall_hits=0;n->recall_fast=n->recall_slow=0;n->recall_cooldown=0;n->recall_latched=0;}
+        return;
+    }
     if(n->type==TS_MATRIX_FX_MODULATOR){if(n->mod){n->mod->attack=1-expf(-1.f/(n->rate*.001f*powf(1000,c->a)));n->mod->release=1-expf(-1.f/(n->rate*.01f*powf(1000,c->b)));}return;}
     if(n->sunvox){ts_sunvox_set(n->sunvox,&c->sunvox);n->gain_target=powf(10,c->gain_db*.05f);}
     else if(n->board){ts_pedalboard_set(n->board,&c->board);n->gain_target=powf(10,c->gain_db*.05f);}
@@ -295,7 +302,7 @@ static void recall_track(TsMatrixEffects *f,const TsSourceRoute *route,float pea
         unsigned gain=route->matrix_gain[TS_MATRIX_EFFECT_BASE+i];
         if(!(mask&1) || !gain)continue;
         TsMatrixEffectNode *n=f->current[i];
-        if(hit)++n->recall_hits;
+        if(hit){++n->recall_hits;n->recall_cooldown=n->rate/5;}
         else n->recall_peak=fmaxf(n->recall_peak,peak*gain*.001f);
     }
 }
@@ -313,12 +320,32 @@ TsRecallReading ts_matrix_recall_take(TsMatrixEffects *f,int i)
     }
     return reading;
 }
+/* The audio envelope supplies cues for Mosaic and processed audio. A latch
+   and 200-ms refractory interval prevent a sustained tone from firing each
+   OSC poll; tracker and Mosaic voice starts remain explicit. */
+static void recall_audio(TsMatrixEffectNode *n,TsStereoFrame in)
+{
+    float peak=fmaxf(fabsf(in.l),fabsf(in.r));
+    if(!isfinite(peak))peak=0;
+    n->recall_peak=fmaxf(n->recall_peak,peak);
+    n->recall_fast+=(peak-n->recall_fast)*n->recall_attack;
+    n->recall_slow+=(peak-n->recall_slow)*n->recall_release;
+    if(n->recall_cooldown)--n->recall_cooldown;
+    float rise=n->recall_fast-n->recall_slow;
+    if(n->recall_fast<.002f || rise<fmaxf(.0005f,n->recall_slow*.08f))n->recall_latched=0;
+    if(!n->recall_latched && n->recall_fast>.004f && rise>fmaxf(.002f,n->recall_slow*.30f)) {
+        n->recall_latched=1;
+        if(!n->recall_cooldown){++n->recall_hits;n->recall_cooldown=n->rate/5;}
+    }
+    if(n->recall_fast<1e-20f)n->recall_fast=0;
+    if(n->recall_slow<1e-20f)n->recall_slow=0;
+}
 static TsStereoFrame node_process(TsMatrixEffects *f,int slot,TsMatrixEffectNode *n,TsStereoFrame in,TsStereoFrame key,int connected,int transitioning)
 {
     if(!n)return (TsStereoFrame){0,0};
     if(n->type==TS_MATRIX_FX_RECALL) {
         if(n->target && n==f->current[slot])
-            n->recall_peak=fmaxf(n->recall_peak,fmaxf(fabsf(in.l),fabsf(in.r)));
+            recall_audio(n,in);
         return (TsStereoFrame){0,0};
     }
     node_transport(f,n);

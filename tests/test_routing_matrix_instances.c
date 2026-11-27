@@ -161,6 +161,17 @@ static void stress_recall_sends(void)
     }
     for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
         TsRecallReading r=ts_matrix_recall_take(&bank,i);
+        assert(r.id==c.effect[i].id && r.hits==1);
+        close_to(r.level,.5f*(100+50*i)*.001f,1e-5f);
+    }
+    /* Each independently gained send sees the first audio onset. Holding
+       that level beyond the refractory interval must not emit more hits. */
+    for(int f=0;f<48000;++f) {
+        TsStereoFrame output=frame((TsStereoFrame){.5f,-.25f});
+        assert(output.l==0 && output.r==0);
+    }
+    for(int i=0;i<TS_MATRIX_EFFECT_CAPACITY;++i) {
+        TsRecallReading r=ts_matrix_recall_take(&bank,i);
         assert(r.id==c.effect[i].id && r.hits==0);
         close_to(r.level,.5f*(100+50*i)*.001f,1e-5f);
     }
